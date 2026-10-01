@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<!--
+  檔案：介面.html（View 層：網頁畫面）
+  版本：v1.2.0（2026-10-01）改為索引標籤，依操作流程排列
+  說明：活動資料整理的操作畫面。
+        標籤順序＝操作流程：① 登錄活動 → ② 同步與整理 → ③ 大車點名 → ④ 活動管理 → ⑤ 控制台
+        每個標籤只列出「這一步需要處理的活動」與該步驟的按鈕。
+        畫面不存任何資料；每次操作完成後向伺服器重新讀取狀態。
+-->
+<style>
+  :root { --底:#f7f6f2; --卡:#ffffff; --字:#222; --淡字:#666; --線:#ddd8cc; --主:#8a5a12; --主淡:#f3e8d6; --錯:#b3261e; --好:#2e7d32; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif; background:var(--底); color:var(--字); font-size:15px; }
+  header { background:var(--主); color:#fff; padding:14px 16px; }
+  header h1 { margin:0; font-size:18px; }
+  header .副 { font-size:13px; opacity:.9; margin-top:4px; }
+  header a { color:#fff; }
+  main { max-width:1100px; margin:0 auto; padding:16px; }
+
+  /* 索引標籤 */
+  .標籤列 { display:flex; gap:4px; overflow-x:auto; border-bottom:2px solid var(--主); margin-bottom:16px; }
+  .標籤 { flex:0 0 auto; background:#ece7dc; color:var(--字); border:0; border-radius:8px 8px 0 0; padding:10px 14px; font-size:14px; cursor:pointer; margin:0; }
+  .標籤.目前 { background:var(--主); color:#fff; font-weight:600; }
+  .標籤 .數 { display:inline-block; min-width:20px; padding:0 6px; margin-left:6px; border-radius:10px; background:var(--錯); color:#fff; font-size:12px; line-height:18px; }
+  .標籤 .數:empty { display:none; }
+  .頁 { display:none; }
+  .頁.目前 { display:block; }
+
+  .卡 { background:var(--卡); border:1px solid var(--線); border-radius:10px; padding:16px; margin-bottom:16px; }
+  .卡 h2 { margin:0 0 8px; font-size:16px; }
+  .說明 { color:var(--淡字); font-size:13px; margin:0 0 12px; line-height:1.6; }
+  label { display:block; font-size:13px; color:var(--淡字); margin:8px 0 4px; }
+  input, select { width:100%; padding:8px 10px; border:1px solid var(--線); border-radius:6px; font-size:15px; }
+  .列 { display:flex; gap:12px; flex-wrap:wrap; }
+  .列 > div { flex:1 1 220px; }
+  button { background:var(--主); color:#fff; border:0; border-radius:6px; padding:7px 12px; font-size:14px; cursor:pointer; margin:3px 4px 3px 0; }
+  button.次 { background:#fff; color:var(--主); border:1px solid var(--主); }
+  button:disabled { opacity:.45; cursor:wait; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:8px 6px; border-bottom:1px solid var(--線); vertical-align:top; }
+  th { color:var(--淡字); font-weight:600; font-size:13px; }
+  small { color:var(--淡字); }
+  .狀 { display:inline-block; padding:1px 8px; border-radius:10px; font-size:12px; background:var(--主淡); }
+  .狀.演練 { background:#fff3cd; } .狀.正式 { background:#d8ecd9; } .狀.結束 { background:#eee; color:#888; }
+  .提醒數 { color:var(--錯); font-weight:600; }
+  .空 { color:var(--淡字); padding:12px 6px; }
+  .表格框 { overflow-x:auto; }
+
+  /* 大車點名的步驟進度 */
+  .步驟 { display:flex; gap:6px; flex-wrap:wrap; font-size:12px; margin-top:4px; }
+  .步驟 span { padding:2px 8px; border-radius:10px; background:#eee; color:#888; }
+  .步驟 span.完成 { background:#d8ecd9; color:#1b5e20; }
+
+  #結果 { white-space:pre-wrap; display:none; }
+  #結果.好 { border-color:var(--好); }
+  #結果.錯 { border-color:var(--錯); color:var(--錯); }
+  .忙碌 { display:none; color:var(--淡字); font-size:13px; margin:-8px 0 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="標題">法會活動雲端系統｜活動資料整理</h1>
+  <div class="副" id="副標">載入中…</div>
+</header>
+
+<main>
+  <div class="卡" id="結果"></div>
+  <div class="忙碌" id="忙碌">處理中，請勿關閉畫面（最長約 5 分鐘）…</div>
+
+  <!-- ===== 尚未連結控制台 ===== -->
+  <section id="區_未連結" style="display:none">
+    <div class="卡">
+      <h2>第一次使用：連結您精舍的控制台</h2>
+      <p class="說明">精舍已經有控制台：請向管理者索取控制台網址（需「編輯者」權限）並貼在下方。</p>
+      <label for="輸入_控制台網址">控制台網址</label>
+      <input id="輸入_控制台網址" placeholder="https://docs.google.com/spreadsheets/d/…">
+      <button onclick="連結控制台()">連結既有控制台</button>
+      <hr style="border:0;border-top:1px solid var(--線);margin:16px 0">
+      <p class="說明">精舍第一次使用本系統：由一位管理者建立新的控制台。</p>
+      <label for="輸入_精舍名稱">精舍名稱</label>
+      <input id="輸入_精舍名稱" placeholder="例如：普泉精舍">
+      <button class="次" onclick="建立控制台()">建立新控制台</button>
+    </div>
+  </section>
+
+  <!-- ===== 已連結：索引標籤 ===== -->
+  <section id="區_已連結" style="display:none">
+    <nav class="標籤列" role="tablist">
+      <button class="標籤" data-頁="登錄" onclick="切換標籤('登錄')">① 登錄活動<span class="數" id="數_登錄"></span></button>
+      <button class="標籤" data-頁="同步" onclick="切換標籤('同步')">② 同步與整理<span class="數" id="數_同步"></span></button>
+      <button class="標籤" data-頁="點名" onclick="切換標籤('點名')">③ 大車點名</button>
+      <button class="標籤" data-頁="管理" onclick="切換標籤('管理')">④ 活動管理</button>
+      <button class="標籤" data-頁="控制台" onclick="切換標籤('控制台')">⑤ 控制台</button>
+    </nav>
+
+    <!-- ① 登錄活動 -->
+    <div class="頁" id="頁_登錄">
+      <div class="卡">
+        <h2>步驟 1：新增活動</h2>
+        <p class="說明">貼上這場活動 Google 表單的「回覆試算表」網址。舊活動不需登錄。</p>
+        <div class="列">
+          <div><label for="輸入_活動名稱">活動名稱</label><input id="輸入_活動名稱" placeholder="例如：116 天祥新春"></div>
+          <div><label for="輸入_活動類型">活動類型</label>
+            <select id="輸入_活動類型"><option>精舍內</option><option>對外</option></select></div>
+        </div>
+        <label for="輸入_來源網址">原始回覆試算表網址</label>
+        <input id="輸入_來源網址" placeholder="https://docs.google.com/spreadsheets/d/…">
+        <button onclick="新增活動()">新增活動</button>
+      </div>
+      <div class="卡">
+        <h2>步驟 2：建立整理副本</h2>
+        <p class="說明">每場活動只做一次：把原始回覆表整份複製到同一個資料夾（檔名加「_整理」）。若控制台指定了「副本建立帳號」，需用該帳號登入。</p>
+        <button onclick="執行('建立副本','全部')">為全部新活動建立副本</button>
+        <div class="表格框"><table>
+          <thead><tr><th>活動</th><th>類型</th><th>原始表</th><th>操作</th></tr></thead>
+          <tbody id="表_登錄"></tbody>
+        </table></div>
+      </div>
+    </div>
+
+    <!-- ② 同步與整理 -->
+    <div class="頁" id="頁_同步">
+      <div class="卡">
+        <h2>步驟 3：同步新報名</h2>
+        <p class="說明">把表單的新回應追加到副本最後（淺黃底色）。已在副本刪除的資料不會再加回來。之後請直接開啟副本整理：修正、刪除重複、分車、新增欄位。</p>
+        <button onclick="執行('同步','全部')">同步全部活動</button>
+        <div class="表格框"><table>
+          <thead><tr><th>活動</th><th>狀態</th><th>上次同步</th><th>筆數</th><th>檔案</th><th>操作</th></tr></thead>
+          <tbody id="表_同步"></tbody>
+        </table></div>
+      </div>
+      <div class="卡">
+        <h2>待處理提醒</h2>
+        <p class="說明">表單新增題目、副本分頁被改名等狀況。依說明處理副本後，按「已處理」。</p>
+        <div class="表格框"><table>
+          <thead><tr><th>時間</th><th>活動</th><th>類型</th><th>說明</th><th>操作</th></tr></thead>
+          <tbody id="表_提醒"></tbody>
+        </table></div>
+      </div>
+    </div>
+
+    <!-- ③ 大車點名 -->
+    <div class="頁" id="頁_點名">
+      <div class="卡">
+        <h2>步驟 4～6：大車點名（對外活動）</h2>
+        <p class="說明">
+          <b>4 產生點名資料</b>：依點名系統欄名（姓名、法名、手機號碼、身份別、領隊、日期-起、日期-迄、去程、回程、去程時段、義工組別、車號、車號說明），到副本找同名欄位取值，結果在副本「大車報到點名資料」分頁，請先檢查。<br>
+          <b>5 匯出點名系統</b>：整份覆蓋點名試算表的大車名單（先自動備份）；首次匯出後進入「演練」，可反覆修正再匯出。<br>
+          <b>6 轉為正式</b>：最後一次匯出並清空演練報到紀錄，之後名單請在點名系統修改。
+        </p>
+        <div class="表格框"><table>
+          <thead><tr><th>活動</th><th>狀態</th><th>進度</th><th>檔案</th><th>操作</th></tr></thead>
+          <tbody id="表_點名"></tbody>
+        </table></div>
+      </div>
+    </div>
+
+    <!-- ④ 活動管理 -->
+    <div class="頁" id="頁_管理">
+      <div class="卡">
+        <h2>活動管理</h2>
+        <p class="說明">活動結束後設為「結束」：不再同步；對外活動會把點名系統「活動配置」改為「停用」。</p>
+        <div class="表格框"><table>
+          <thead><tr><th>活動</th><th>類型</th><th>狀態</th><th>檔案</th><th>操作</th></tr></thead>
+          <tbody id="表_管理"></tbody>
+        </table></div>
+      </div>
+    </div>
+
+    <!-- ⑤ 控制台 -->
+    <div class="頁" id="頁_控制台">
+      <div class="卡">
+        <h2>控制台</h2>
+        <p class="說明" id="控制台資訊"></p>
+        <p class="說明">「副本建立帳號」「預設點名試算表」等請到控制台試算表的「系統設定」分頁填寫。</p>
+        <button class="次" onclick="重新整理()">重新整理畫面</button>
+        <button class="次" onclick="執行('修復控制台')">檢查並補齊控制台</button>
+        <button class="次" onclick="取消連結()">取消連結（改連其他精舍）</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+  /* ========== 狀態 ========== */
+  let obj狀態 = null;        // 伺服器回傳的最新狀態
+  let str目前標籤 = '登錄';   // 目前顯示的標籤
+
+  /* ========== 共用工具 ========== */
+
+  /* 把文字轉成安全的 HTML，避免活動名稱中的特殊符號破壞畫面 */
+  function 安全文字(str) {
+    return String(str === undefined || str === null ? '' : str)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  /* 處理中停用所有按鈕，避免重複點擊（標籤除外，可切換查看） */
+  function 設定忙碌(bool忙碌) {
+    document.querySelectorAll('button:not(.標籤)').forEach(function (b) { b.disabled = bool忙碌; });
+    document.getElementById('忙碌').style.display = bool忙碌 ? 'block' : 'none';
+  }
+
+  /* 顯示操作結果 */
+  function 顯示結果(obj) {
+    const el = document.getElementById('結果');
+    if (!obj) { el.style.display = 'none'; return; }
+    const str明細 = (obj.arr明細 || []).join('\n');
+    el.className = '卡 ' + (obj.bool成功 ? '好' : '錯');
+    el.textContent = (obj.str訊息 || '') + (str明細 ? '\n\n' + str明細 : '');
+    el.style.display = 'block';
+    window.scrollTo(0, 0);
+  }
+
+  /* 呼叫伺服器端函式：處理忙碌狀態與連線失敗 */
+  function 呼叫(str函式, arr參數, fn完成) {
+    設定忙碌(true);
+    google.script.run
+      .withSuccessHandler(function (obj) { 設定忙碌(false); fn完成(obj); })
+      .withFailureHandler(function (err) {
+        設定忙碌(false);
+        顯示結果({ bool成功: false, str訊息: '與伺服器連線失敗，請重新整理網頁後再試。\n（' + err.message + '）' });
+      })[str函式].apply(null, arr參數 || []);
+  }
+
+  /* 產生操作按鈕 */
+  function 按鈕(str動作, str文字, str活動ID, str樣式) {
+    return '<button' + (str樣式 ? ' class="' + str樣式 + '"' : '') +
+      ' onclick="執行(\'' + str動作 + '\',\'' + str活動ID + '\')">' + str文字 + '</button>';
+  }
+
+  /* 產生檔案連結 */
+  function 檔案連結(o, arr種類) {
+    const obj對照 = { 原始表: o.str來源網址, 副本: o.str副本網址, 點名表: o.str點名網址 };
+    return arr種類.filter(function (k) { return obj對照[k]; })
+      .map(function (k) { return '<a href="' + 安全文字(obj對照[k]) + '" target="_blank">' + k + '</a>'; })
+      .join('｜');
+  }
+
+  function 活動名稱格(o) {
+    return '<b>' + 安全文字(o.str活動名稱) + '</b><br><small>' + 安全文字(o.str活動ID) + '</small>';
+  }
+  function 狀態格(o) {
+    return '<span class="狀 ' + 安全文字(o.str活動狀態) + '">' + 安全文字(o.str活動狀態) + '</span>';
+  }
+  function 空列(int欄數, str文字) {
+    return '<tr><td colspan="' + int欄數 + '" class="空">' + str文字 + '</td></tr>';
+  }
+
+  /* ========== 標籤切換 ========== */
+  function 切換標籤(str名稱) {
+    str目前標籤 = str名稱;
+    document.querySelectorAll('.標籤').forEach(function (b) {
+      b.classList.toggle('目前', b.getAttribute('data-頁') === str名稱);
+    });
+    document.querySelectorAll('.頁').forEach(function (p) {
+      p.classList.toggle('目前', p.id === '頁_' + str名稱);
+    });
+  }
+
+  /* ========== 讀取狀態並重畫 ========== */
+  function 重新整理() {
+    呼叫('介面_取得狀態', [], function (obj) {
+      obj狀態 = obj;
+      if (!obj.bool成功) { 顯示結果(obj); return; }
+      document.getElementById('區_未連結').style.display = obj.bool已連結 ? 'none' : 'block';
+      document.getElementById('區_已連結').style.display = obj.bool已連結 ? 'block' : 'none';
+      if (!obj.bool已連結) {
+        document.getElementById('副標').textContent = '使用者：' + obj.str使用者 + '｜尚未連結控制台';
+        return;
+      }
+      document.getElementById('標題').textContent = obj.str精舍名稱 + '｜活動資料整理';
+      document.getElementById('副標').innerHTML = '使用者：' + 安全文字(obj.str使用者) +
+        '｜<a href="' + 安全文字(obj.str控制台網址) + '" target="_blank">開啟控制台試算表</a>';
+      document.getElementById('控制台資訊').innerHTML = '精舍：' + 安全文字(obj.str精舍名稱) +
+        '<br>控制台：<a href="' + 安全文字(obj.str控制台網址) + '" target="_blank">' + 安全文字(obj.str控制台網址) + '</a>';
+
+      const arr = obj.arr活動 || [];
+      畫登錄頁(arr);
+      畫同步頁(arr, obj.arr提醒 || []);
+      畫點名頁(arr);
+      畫管理頁(arr);
+      切換標籤(str目前標籤);
+    });
+  }
+
+  /* ① 登錄活動：尚未建立副本、未結束的活動 */
+  function 畫登錄頁(arr) {
+    const arr待建 = arr.filter(function (o) { return !o.str副本網址 && o.str活動狀態 !== '結束'; });
+    document.getElementById('數_登錄').textContent = arr待建.length || '';
+    document.getElementById('表_登錄').innerHTML = arr待建.length === 0
+      ? 空列(4, '沒有待建立副本的活動。新增活動後會出現在這裡。')
+      : arr待建.map(function (o) {
+          return '<tr><td>' + 活動名稱格(o) + '</td><td>' + 安全文字(o.str活動類型) + '</td><td>' +
+            檔案連結(o, ['原始表']) + '</td><td>' + 按鈕('建立副本', '建立副本', o.str活動ID) + '</td></tr>';
+        }).join('');
+  }
+
+  /* ② 同步與整理：已有副本、可同步（收件中／演練）的活動＋待處理提醒 */
+  function 畫同步頁(arr, arr提醒) {
+    const arr可同步 = arr.filter(function (o) {
+      return o.str副本網址 && (o.str活動狀態 === '收件中' || o.str活動狀態 === '演練');
+    });
+    document.getElementById('表_同步').innerHTML = arr可同步.length === 0
+      ? 空列(6, '沒有可同步的活動（需已建立副本，且為「收件中」或「演練」）。')
+      : arr可同步.map(function (o) {
+          return '<tr><td>' + 活動名稱格(o) + '<br><small>' + 安全文字(o.str活動類型) + '</small></td><td>' + 狀態格(o) +
+            '</td><td>' + 安全文字(o.str上次同步) + '</td><td>' + o.int已同步筆數 +
+            (o.int待處理提醒 > 0 ? '<br><span class="提醒數">提醒 ' + o.int待處理提醒 + '</span>' : '') +
+            '</td><td>' + 檔案連結(o, ['原始表', '副本']) + '</td><td>' + 按鈕('同步', '同步', o.str活動ID) + '</td></tr>';
+        }).join('');
+
+    document.getElementById('數_同步').textContent = arr提醒.length || '';
+    document.getElementById('表_提醒').innerHTML = arr提醒.length === 0
+      ? 空列(5, '目前沒有待處理的提醒。')
+      : arr提醒.map(function (o) {
+          return '<tr><td>' + 安全文字(o.str時間) + '</td><td>' + 安全文字(o.str活動名稱) + '</td><td>' +
+            安全文字(o.str類型) + '</td><td>' + 安全文字(o.str說明) + '</td><td>' +
+            '<button onclick="標記提醒(' + o.int列號 + ',\'已處理\')">已處理</button>' +
+            '<button class="次" onclick="標記提醒(' + o.int列號 + ',\'忽略\')">忽略</button></td></tr>';
+        }).join('');
+  }
+
+  /* ③ 大車點名：對外、已有副本、未結束的活動，依狀態顯示可做的步驟 */
+  function 畫點名頁(arr) {
+    const arr對外 = arr.filter(function (o) {
+      return o.str活動類型 === '對外' && o.str副本網址 && o.str活動狀態 !== '結束';
+    });
+    document.getElementById('表_點名').innerHTML = arr對外.length === 0
+      ? 空列(5, '沒有進行中的對外活動（需先在 ① 建立副本）。')
+      : arr對外.map(function (o) {
+          const str狀 = o.str活動狀態;
+          const str進度 = '<div class="步驟">' +
+            '<span class="' + (o.str上次產生 ? '完成' : '') + '">4 產生' + (o.str上次產生 ? ' ' + 安全文字(o.str上次產生) : '') + '</span>' +
+            '<span class="' + (o.str上次匯出 ? '完成' : '') + '">5 匯出' + (o.str上次匯出 ? ' ' + 安全文字(o.str上次匯出) : '') + '</span>' +
+            '<span class="' + (str狀 === '正式' ? '完成' : '') + '">6 正式' + (o.str轉正式 ? ' ' + 安全文字(o.str轉正式) : '') + '</span>' +
+            '</div>';
+          let str操作 = '';
+          if (str狀 === '收件中' || str狀 === '演練') {
+            str操作 += 按鈕('產生點名', '4 產生點名資料', o.str活動ID);
+            str操作 += 按鈕('匯出點名', '5 匯出點名系統', o.str活動ID);
+          }
+          if (str狀 === '演練') { str操作 += 按鈕('轉為正式', '6 轉為正式', o.str活動ID, '次'); }
+          if (str狀 === '正式') { str操作 += '<small>名單已鎖定，請在點名系統修改</small>'; }
+          return '<tr><td>' + 活動名稱格(o) + '</td><td>' + 狀態格(o) + '</td><td>' + str進度 + '</td><td>' +
+            檔案連結(o, ['副本', '點名表']) + '</td><td>' + str操作 + '</td></tr>';
+        }).join('');
+  }
+
+  /* ④ 活動管理：全部活動 */
+  function 畫管理頁(arr) {
+    document.getElementById('表_管理').innerHTML = arr.length === 0
+      ? 空列(5, '尚無活動。')
+      : arr.map(function (o) {
+          const str狀 = o.str活動狀態;
+          let str操作 = '';
+          if (str狀 === '正式') { str操作 += 按鈕('退回演練', '退回演練', o.str活動ID, '次'); }
+          str操作 += (str狀 === '結束')
+            ? '<button class="次" onclick="設定狀態(\'' + o.str活動ID + '\',\'收件中\')">恢復收件中</button>'
+            : '<button class="次" onclick="設定狀態(\'' + o.str活動ID + '\',\'結束\')">設為結束</button>';
+          return '<tr><td>' + 活動名稱格(o) + '</td><td>' + 安全文字(o.str活動類型) + '</td><td>' + 狀態格(o) +
+            '</td><td>' + 檔案連結(o, ['原始表', '副本', '點名表']) + '</td><td>' + str操作 + '</td></tr>';
+        }).join('');
+  }
+
+  /* ========== 按鈕動作 ========== */
+
+  /* 需要二次確認的動作 */
+  const obj確認文字 = {
+    '匯出點名': '匯出會「整份覆蓋」點名試算表中的大車名單（覆蓋前自動備份）。確定匯出？',
+    '轉為正式': '轉為正式後：\n1. 先做最後一次匯出\n2. 清空演練期的報到紀錄（會先備份）\n3. 本系統不再匯出與同步，修改請到點名系統\n\n確定轉為正式？',
+    '退回演練': '退回演練後可再次匯出，但下次匯出會覆蓋點名系統中正式期已修改的名單。確定退回？'
+  };
+
+  function 執行(str動作, str活動ID) {
+    if (obj確認文字[str動作] && !confirm(obj確認文字[str動作])) { return; }
+    const obj對照 = { '建立副本': '介面_建立副本', '同步': '介面_同步', '修復控制台': '介面_修復控制台',
+                     '產生點名': '介面_產生點名資料', '匯出點名': '介面_匯出點名系統',
+                     '轉為正式': '介面_轉為正式', '退回演練': '介面_退回演練' };
+    呼叫(obj對照[str動作], str活動ID ? [str活動ID] : [], function (obj) { 顯示結果(obj); 重新整理(); });
+  }
+  function 新增活動() {
+    const str名稱 = document.getElementById('輸入_活動名稱').value;
+    const str類型 = document.getElementById('輸入_活動類型').value;
+    const str網址 = document.getElementById('輸入_來源網址').value;
+    呼叫('介面_新增活動', [str名稱, str類型, str網址], function (obj) {
+      顯示結果(obj);
+      if (obj.bool成功) {
+        document.getElementById('輸入_活動名稱').value = '';
+        document.getElementById('輸入_來源網址').value = '';
+      }
+      重新整理();
+    });
+  }
+  function 設定狀態(str活動ID, str狀態) {
+    if (str狀態 === '結束' && !confirm('確定把這場活動設為結束？之後不再同步。')) { return; }
+    呼叫('介面_設定活動狀態', [str活動ID, str狀態], function (obj) { 顯示結果(obj); 重新整理(); });
+  }
+  function 標記提醒(int列號, str狀態) {
+    呼叫('介面_標記提醒', [int列號, str狀態], function (obj) { 顯示結果(obj); 重新整理(); });
+  }
+  function 連結控制台() {
+    呼叫('介面_連結既有控制台', [document.getElementById('輸入_控制台網址').value], function (obj) { 顯示結果(obj); 重新整理(); });
+  }
+  function 建立控制台() {
+    呼叫('介面_建立新控制台', [document.getElementById('輸入_精舍名稱').value], function (obj) { 顯示結果(obj); 重新整理(); });
+  }
+  function 取消連結() {
+    if (!confirm('確定要取消連結嗎？控制台試算表不會被刪除，之後可重新連結。')) { return; }
+    呼叫('介面_取消連結', [], function (obj) { 顯示結果(obj); 重新整理(); });
+  }
+
+  重新整理();
+</script>
+</body>
+</html>
