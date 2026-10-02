@@ -7,7 +7,8 @@
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <!--
   檔案：index.html（放在 GitHub Pages）
-  版本：v2.1.0（2026-10-02）精舍端與總管理端分開網址：本頁不再有「建立新控制台」（移到 admin.html）
+  版本：v2.1.0（2026-10-02）同步頁新增「待同步」欄與「檢查新回應」按鈕；筆數改名「已同步」
+        v2.1.0（2026-10-02）精舍端與總管理端分開網址：本頁不再有「建立新控制台」（移到 admin.html）
         v2.0.0（2026-10-02）改為 GitHub 網頁：以 fetch 呼叫 GAS API、Google 帳號登入
         v1.2.0（2026-10-01）索引標籤，依操作流程排列
   說明：活動資料整理的操作畫面。
@@ -142,10 +143,11 @@
     <div class="頁" id="頁_同步">
       <div class="卡">
         <h2>步驟 3：同步新報名</h2>
-        <p class="說明">把表單的新回應追加到副本最後（淺黃底色）。已在副本刪除的資料不會再加回來。之後請直接開啟副本整理：修正、刪除重複、分車、新增欄位。</p>
+        <p class="說明">把表單的新回應追加到副本最後（淺黃底色）。已在副本刪除或移到「無效資料」的資料不會再加回來。之後請直接開啟副本整理：修正、刪除重複、分車、新增欄位。<br><b>待同步</b>＝表單已收到、但還沒追加到副本的新回應數；進入本頁會自動檢查一次，也可按「檢查新回應」隨時更新（只查看，不會改動任何資料）。<b>已同步</b>＝系統累計追加過的筆數，不含人工移除的資料。</p>
+        <button class="次" onclick="檢查新回應()">檢查新回應</button>
         <button onclick="執行('同步','全部')">同步全部活動</button>
         <div class="表格框"><table>
-          <thead><tr><th>活動</th><th>狀態</th><th>上次同步</th><th>筆數</th><th>檔案</th><th>操作</th></tr></thead>
+          <thead><tr><th>活動</th><th>狀態</th><th>上次同步</th><th>待同步</th><th>已同步</th><th>檔案</th><th>操作</th></tr></thead>
           <tbody id="表_同步"></tbody>
         </table></div>
       </div>
@@ -206,6 +208,8 @@
   /* ========== 狀態 ========== */
   let obj狀態 = null;        // 伺服器回傳的最新狀態
   let str目前標籤 = '登錄';   // 目前顯示的標籤
+  let obj待同步 = {};        // { 活動ID: 待同步筆數 }，由「檢查新回應」填入；沒有該活動ID＝尚未檢查
+  let bool已自動檢查 = false; // 每次載入網頁只自動檢查一次
 
   /* ========== 共用工具 ========== */
 
@@ -250,6 +254,7 @@
 
   function 登出() {
     str登入憑證 = '';
+    obj待同步 = {}; bool已自動檢查 = false;
     if (window.google && google.accounts && google.accounts.id) { google.accounts.id.disableAutoSelect(); }
     document.getElementById('副標').textContent = '已登出';
     顯示區塊('登入');
@@ -310,6 +315,12 @@
   function 狀態格(o) {
     return '<span class="狀 ' + 安全文字(o.str活動狀態) + '">' + 安全文字(o.str活動狀態) + '</span>';
   }
+  /* 「待同步」欄：尚未檢查／已是最新／N 筆待同步 */
+  function 待同步格(o) {
+    const n = obj待同步[o.str活動ID];
+    if (n === undefined) { return '<small>尚未檢查</small>'; }
+    return n > 0 ? '<span class="提醒數">' + n + ' 筆</span>' : '<span style="color:var(--好)">✔ 最新</span>';
+  }
   function 空列(int欄數, str文字) {
     return '<tr><td colspan="' + int欄數 + '" class="空">' + str文字 + '</td></tr>';
   }
@@ -348,6 +359,11 @@
       畫點名頁(arr);
       畫管理頁(arr);
       切換標籤(str目前標籤);
+      // 第一次載入時自動檢查一次新回應（只查看）
+      if (!bool已自動檢查) {
+        bool已自動檢查 = true;
+        if (arr.some(function (o) { return o.str副本網址 && (o.str活動狀態 === '收件中' || o.str活動狀態 === '演練'); })) { 檢查新回應(true); }
+      }
     });
   }
 
@@ -369,10 +385,10 @@
       return o.str副本網址 && (o.str活動狀態 === '收件中' || o.str活動狀態 === '演練');
     });
     document.getElementById('表_同步').innerHTML = arr可同步.length === 0
-      ? 空列(6, '沒有可同步的活動（需已建立副本，且為「收件中」或「演練」）。')
+      ? 空列(7, '沒有可同步的活動（需已建立副本，且為「收件中」或「演練」）。')
       : arr可同步.map(function (o) {
           return '<tr><td>' + 活動名稱格(o) + '<br><small>' + 安全文字(o.str活動類型) + '</small></td><td>' + 狀態格(o) +
-            '</td><td>' + 安全文字(o.str上次同步) + '</td><td>' + o.int已同步筆數 +
+            '</td><td>' + 安全文字(o.str上次同步) + '</td><td>' + 待同步格(o) + '</td><td>' + o.int已同步筆數 +
             (o.int待處理提醒 > 0 ? '<br><span class="提醒數">提醒 ' + o.int待處理提醒 + '</span>' : '') +
             '</td><td>' + 檔案連結(o, ['原始表', '副本']) + '</td><td>' + 按鈕('同步', '同步', o.str活動ID) + '</td></tr>';
         }).join('');
@@ -439,12 +455,30 @@
     '退回演練': '退回演練後可再次匯出，但下次匯出會覆蓋點名系統中正式期已修改的名單。確定退回？'
   };
 
+  /* 檢查新回應：只查看。bool靜默＝true 時不顯示成功訊息（進入頁面自動檢查用） */
+  function 檢查新回應(bool靜默) {
+    呼叫('檢查新回應', ['全部'], function (obj) {
+      if (obj.bool成功) {
+        Object.keys(obj.obj待同步 || {}).forEach(function (k) { obj待同步[k] = obj.obj待同步[k]; });
+        if (!bool靜默 || (obj.arr明細 || []).some(function (s) { return s.indexOf('✘') === 0; })) { 顯示結果(obj); }
+        if (obj狀態) { 畫同步頁(obj狀態.arr活動 || [], obj狀態.arr提醒 || []); }
+      } else {
+        顯示結果(obj);
+      }
+    });
+  }
   function 執行(str動作, str活動ID) {
     if (obj確認文字[str動作] && !confirm(obj確認文字[str動作])) { return; }
     const obj對照 = { '建立副本': '建立副本', '同步': '同步', '修復控制台': '修復控制台',
                      '產生點名': '產生點名資料', '匯出點名': '匯出點名系統',
                      '轉為正式': '轉為正式', '退回演練': '退回演練' };
-    呼叫(obj對照[str動作], str活動ID ? [str活動ID] : [], function (obj) { 顯示結果(obj); 重新整理(); });
+    呼叫(obj對照[str動作], str活動ID ? [str活動ID] : [], function (obj) {
+      // 同步後待同步數字已過期：清掉，改顯示「尚未檢查」，避免誤導
+      if (str動作 === '同步') {
+        if (str活動ID && str活動ID !== '全部') { delete obj待同步[str活動ID]; } else { obj待同步 = {}; }
+      }
+      顯示結果(obj); 重新整理();
+    });
   }
   function 新增活動() {
     const str名稱 = document.getElementById('輸入_活動名稱').value;
