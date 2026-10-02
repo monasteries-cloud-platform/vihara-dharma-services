@@ -1,16 +1,27 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-<base target="_top">
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>法會活動雲端系統｜活動資料整理</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <!--
-  檔案：介面.html（View 層：網頁畫面）
-  版本：v1.2.0（2026-10-01）改為索引標籤，依操作流程排列
+  檔案：index.html（放在 GitHub Pages）
+  版本：v2.0.0（2026-10-02）改為 GitHub 網頁：以 fetch 呼叫 GAS API、Google 帳號登入
+        v1.2.0（2026-10-01）索引標籤，依操作流程排列
   說明：活動資料整理的操作畫面。
         標籤順序＝操作流程：① 登錄活動 → ② 同步與整理 → ③ 大車點名 → ④ 活動管理 → ⑤ 控制台
         每個標籤只列出「這一步需要處理的活動」與該步驟的按鈕。
         畫面不存任何資料；每次操作完成後向伺服器重新讀取狀態。
+  設定：只需修改下方「系統設定」的兩個值（GAS 網址、OAuth 用戶端 ID）。
 -->
+<script>
+  /* ========== 系統設定（部署時修改這兩行） ========== */
+  const obj系統設定 = {
+    strGAS網址: 'https://script.google.com/macros/s/AKfycbzwur7-jEfXaI21GbO4A1RwsfpwCWXCoFpDBSG17gRRLEvvIEfdkGx1UdcXkgmZMoak/exec',
+    str用戶端ID: '1097675230838-cv1dapo9p4mjd2pce026ann20q97fcte.apps.googleusercontent.com'
+  };
+</script>
 <style>
   :root { --底:#f7f6f2; --卡:#ffffff; --字:#222; --淡字:#666; --線:#ddd8cc; --主:#8a5a12; --主淡:#f3e8d6; --錯:#b3261e; --好:#2e7d32; }
   * { box-sizing: border-box; }
@@ -71,19 +82,32 @@
   <div class="卡" id="結果"></div>
   <div class="忙碌" id="忙碌">處理中，請勿關閉畫面（最長約 5 分鐘）…</div>
 
+  <!-- ===== 尚未登入 ===== -->
+  <section id="區_登入" style="display:none">
+    <div class="卡">
+      <h2>請使用 Google 帳號登入</h2>
+      <p class="說明">登入後，系統會依您的帳號找到所屬精舍的控制台。帳號需在精舍控制台的「授權帳號」名單中。</p>
+      <div id="登入按鈕"></div>
+    </div>
+  </section>
+
   <!-- ===== 尚未連結控制台 ===== -->
   <section id="區_未連結" style="display:none">
     <div class="卡">
       <h2>第一次使用：連結您精舍的控制台</h2>
-      <p class="說明">精舍已經有控制台：請向管理者索取控制台網址（需「編輯者」權限）並貼在下方。</p>
+      <p class="說明">請向精舍管理者索取控制台網址貼在下方。您的帳號需已加入該控制台「系統設定」的「授權帳號」。</p>
       <label for="輸入_控制台網址">控制台網址</label>
       <input id="輸入_控制台網址" placeholder="https://docs.google.com/spreadsheets/d/…">
       <button onclick="連結控制台()">連結既有控制台</button>
+      <div id="區_建立控制台" style="display:none">
       <hr style="border:0;border-top:1px solid var(--線);margin:16px 0">
-      <p class="說明">精舍第一次使用本系統：由一位管理者建立新的控制台。</p>
+      <p class="說明"><b>系統管理者</b>：為新精舍開通控制台。</p>
       <label for="輸入_精舍名稱">精舍名稱</label>
       <input id="輸入_精舍名稱" placeholder="例如：普泉精舍">
+      <label for="輸入_精舍管理者">精舍管理者帳號（逗號分隔，會自動加入授權帳號並分享控制台）</label>
+      <input id="輸入_精舍管理者" placeholder="例如：ctpuquan@gmail.com">
       <button class="次" onclick="建立控制台()">建立新控制台</button>
+      </div>
     </div>
   </section>
 
@@ -113,7 +137,7 @@
       </div>
       <div class="卡">
         <h2>步驟 2：建立整理副本</h2>
-        <p class="說明">每場活動只做一次：把原始回覆表整份複製到同一個資料夾（檔名加「_整理」）。若控制台指定了「副本建立帳號」，需用該帳號登入。</p>
+        <p class="說明">每場活動只做一次：把原始回覆表整份複製到同一個資料夾（檔名加「_整理」）。副本由系統帳號建立。</p>
         <button onclick="執行('建立副本','全部')">為全部新活動建立副本</button>
         <div class="表格框"><table>
           <thead><tr><th>活動</th><th>類型</th><th>原始表</th><th>操作</th></tr></thead>
@@ -176,7 +200,8 @@
       <div class="卡">
         <h2>控制台</h2>
         <p class="說明" id="控制台資訊"></p>
-        <p class="說明">「副本建立帳號」「預設點名試算表」等請到控制台試算表的「系統設定」分頁填寫。</p>
+        <p class="說明">「授權帳號」「預設點名試算表」等請到控制台試算表的「系統設定」分頁填寫。<br>
+          表單、原始回覆試算表所在資料夾、點名試算表，都需以「編輯者」共用給系統帳號，系統才能存取。</p>
         <button class="次" onclick="重新整理()">重新整理畫面</button>
         <button class="次" onclick="執行('修復控制台')">檢查並補齊控制台</button>
         <button class="次" onclick="取消連結()">取消連結（改連其他精舍）</button>
@@ -215,15 +240,62 @@
     window.scrollTo(0, 0);
   }
 
-  /* 呼叫伺服器端函式：處理忙碌狀態與連線失敗 */
-  function 呼叫(str函式, arr參數, fn完成) {
+  /* ========== 登入 ========== */
+  let str登入憑證 = '';   // Google 回傳的 ID Token（約 1 小時有效），只存在記憶體
+
+  /* Google 登入元件載入後初始化；載入較慢時每 0.2 秒重試 */
+  function 初始化登入() {
+    if (!window.google || !google.accounts || !google.accounts.id) { setTimeout(初始化登入, 200); return; }
+    google.accounts.id.initialize({
+      client_id: obj系統設定.str用戶端ID,
+      callback: function (obj回應) { str登入憑證 = obj回應.credential; 顯示結果(null); 重新整理(); },
+      auto_select: true
+    });
+    google.accounts.id.renderButton(document.getElementById('登入按鈕'), { theme: 'filled_brown', size: 'large', text: 'signin_with', locale: 'zh-TW' });
+    google.accounts.id.prompt();
+    顯示區塊('登入');
+  }
+
+  function 登出() {
+    str登入憑證 = '';
+    if (window.google && google.accounts && google.accounts.id) { google.accounts.id.disableAutoSelect(); }
+    document.getElementById('副標').textContent = '已登出';
+    顯示區塊('登入');
+  }
+
+  /* 只顯示其中一個大區塊：登入／未連結／已連結 */
+  function 顯示區塊(str名稱) {
+    ['登入', '未連結', '已連結'].forEach(function (k) {
+      document.getElementById('區_' + k).style.display = (k === str名稱) ? 'block' : 'none';
+    });
+  }
+
+  /* ========== 呼叫 GAS API ==========
+     以 text/plain 送出 JSON，瀏覽器不會發出跨網域預檢（GAS 不支援）。
+     回傳 bool需重新登入 時，清掉憑證並回到登入畫面。 */
+  function 呼叫(str動作, arr參數, fn完成) {
+    if (!str登入憑證) { 顯示區塊('登入'); return; }
     設定忙碌(true);
-    google.script.run
-      .withSuccessHandler(function (obj) { 設定忙碌(false); fn完成(obj); })
-      .withFailureHandler(function (err) {
+    fetch(obj系統設定.strGAS網址, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ 動作: str動作, 參數: arr參數 || [], 憑證: str登入憑證 })
+    })
+      .then(function (r) { if (!r.ok) { throw new Error('HTTP ' + r.status); } return r.json(); })
+      .then(function (obj) {
         設定忙碌(false);
-        顯示結果({ bool成功: false, str訊息: '與伺服器連線失敗，請重新整理網頁後再試。\n（' + err.message + '）' });
-      })[str函式].apply(null, arr參數 || []);
+        if (obj.bool需重新登入) {
+          str登入憑證 = '';
+          顯示結果({ bool成功: false, str訊息: obj.str訊息 });
+          顯示區塊('登入');
+          return;
+        }
+        fn完成(obj);
+      })
+      .catch(function (err) {
+        設定忙碌(false);
+        顯示結果({ bool成功: false, str訊息: '無法連線到系統（GAS），請確認網路後再試；若持續發生請通知系統管理者。\n（' + err.message + '）' });
+      });
   }
 
   /* 產生操作按鈕 */
@@ -263,18 +335,19 @@
 
   /* ========== 讀取狀態並重畫 ========== */
   function 重新整理() {
-    呼叫('介面_取得狀態', [], function (obj) {
+    呼叫('取得狀態', [], function (obj) {
       obj狀態 = obj;
       if (!obj.bool成功) { 顯示結果(obj); return; }
-      document.getElementById('區_未連結').style.display = obj.bool已連結 ? 'none' : 'block';
-      document.getElementById('區_已連結').style.display = obj.bool已連結 ? 'block' : 'none';
+      顯示區塊(obj.bool已連結 ? '已連結' : '未連結');
+      document.getElementById('區_建立控制台').style.display = obj.bool系統管理者 ? 'block' : 'none';
       if (!obj.bool已連結) {
-        document.getElementById('副標').textContent = '使用者：' + obj.str使用者 + '｜尚未連結控制台';
+        document.getElementById('副標').innerHTML = '使用者：' + 安全文字(obj.str使用者) + '｜尚未連結控制台｜<a href="#" onclick="登出();return false;">登出</a>';
         return;
       }
       document.getElementById('標題').textContent = obj.str精舍名稱 + '｜活動資料整理';
       document.getElementById('副標').innerHTML = '使用者：' + 安全文字(obj.str使用者) +
-        '｜<a href="' + 安全文字(obj.str控制台網址) + '" target="_blank">開啟控制台試算表</a>';
+        '｜<a href="' + 安全文字(obj.str控制台網址) + '" target="_blank">開啟控制台試算表</a>' +
+        '｜<a href="#" onclick="登出();return false;">登出</a>';
       document.getElementById('控制台資訊').innerHTML = '精舍：' + 安全文字(obj.str精舍名稱) +
         '<br>控制台：<a href="' + 安全文字(obj.str控制台網址) + '" target="_blank">' + 安全文字(obj.str控制台網址) + '</a>';
 
@@ -377,16 +450,16 @@
 
   function 執行(str動作, str活動ID) {
     if (obj確認文字[str動作] && !confirm(obj確認文字[str動作])) { return; }
-    const obj對照 = { '建立副本': '介面_建立副本', '同步': '介面_同步', '修復控制台': '介面_修復控制台',
-                     '產生點名': '介面_產生點名資料', '匯出點名': '介面_匯出點名系統',
-                     '轉為正式': '介面_轉為正式', '退回演練': '介面_退回演練' };
+    const obj對照 = { '建立副本': '建立副本', '同步': '同步', '修復控制台': '修復控制台',
+                     '產生點名': '產生點名資料', '匯出點名': '匯出點名系統',
+                     '轉為正式': '轉為正式', '退回演練': '退回演練' };
     呼叫(obj對照[str動作], str活動ID ? [str活動ID] : [], function (obj) { 顯示結果(obj); 重新整理(); });
   }
   function 新增活動() {
     const str名稱 = document.getElementById('輸入_活動名稱').value;
     const str類型 = document.getElementById('輸入_活動類型').value;
     const str網址 = document.getElementById('輸入_來源網址').value;
-    呼叫('介面_新增活動', [str名稱, str類型, str網址], function (obj) {
+    呼叫('新增活動', [str名稱, str類型, str網址], function (obj) {
       顯示結果(obj);
       if (obj.bool成功) {
         document.getElementById('輸入_活動名稱').value = '';
@@ -397,23 +470,25 @@
   }
   function 設定狀態(str活動ID, str狀態) {
     if (str狀態 === '結束' && !confirm('確定把這場活動設為結束？之後不再同步。')) { return; }
-    呼叫('介面_設定活動狀態', [str活動ID, str狀態], function (obj) { 顯示結果(obj); 重新整理(); });
+    呼叫('設定活動狀態', [str活動ID, str狀態], function (obj) { 顯示結果(obj); 重新整理(); });
   }
   function 標記提醒(int列號, str狀態) {
-    呼叫('介面_標記提醒', [int列號, str狀態], function (obj) { 顯示結果(obj); 重新整理(); });
+    呼叫('標記提醒', [int列號, str狀態], function (obj) { 顯示結果(obj); 重新整理(); });
   }
   function 連結控制台() {
-    呼叫('介面_連結既有控制台', [document.getElementById('輸入_控制台網址').value], function (obj) { 顯示結果(obj); 重新整理(); });
+    呼叫('連結既有控制台', [document.getElementById('輸入_控制台網址').value], function (obj) { 顯示結果(obj); 重新整理(); });
   }
   function 建立控制台() {
-    呼叫('介面_建立新控制台', [document.getElementById('輸入_精舍名稱').value], function (obj) { 顯示結果(obj); 重新整理(); });
+    呼叫('建立新控制台', [document.getElementById('輸入_精舍名稱').value, document.getElementById('輸入_精舍管理者').value],
+      function (obj) { 顯示結果(obj); 重新整理(); });
   }
   function 取消連結() {
     if (!confirm('確定要取消連結嗎？控制台試算表不會被刪除，之後可重新連結。')) { return; }
-    呼叫('介面_取消連結', [], function (obj) { 顯示結果(obj); 重新整理(); });
+    呼叫('取消連結', [], function (obj) { 顯示結果(obj); 重新整理(); });
   }
 
-  重新整理();
+  /* 啟動：先登入，登入成功後自動讀取狀態 */
+  初始化登入();
 </script>
 </body>
 </html>
