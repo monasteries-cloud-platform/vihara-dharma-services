@@ -3,11 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>法會活動雲端系統｜活動資料整理</title>
+<title>法會活動雲端系統｜精舍管理</title>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <!--
   檔案：index.html（放在 GitHub Pages）
-  版本：v2.0.0（2026-10-02）改為 GitHub 網頁：以 fetch 呼叫 GAS API、Google 帳號登入
+  版本：v2.1.0（2026-10-02）精舍端與總管理端分開網址：本頁不再有「建立新控制台」（移到 admin.html）
+        v2.0.0（2026-10-02）改為 GitHub 網頁：以 fetch 呼叫 GAS API、Google 帳號登入
         v1.2.0（2026-10-01）索引標籤，依操作流程排列
   說明：活動資料整理的操作畫面。
         標籤順序＝操作流程：① 登錄活動 → ② 同步與整理 → ③ 大車點名 → ④ 活動管理 → ⑤ 控制台
@@ -74,7 +75,7 @@
 </head>
 <body>
 <header>
-  <h1 id="標題">法會活動雲端系統｜活動資料整理</h1>
+  <h1 id="標題">法會活動雲端系統｜精舍管理</h1>
   <div class="副" id="副標">載入中…</div>
 </header>
 
@@ -95,19 +96,10 @@
   <section id="區_未連結" style="display:none">
     <div class="卡">
       <h2>第一次使用：連結您精舍的控制台</h2>
-      <p class="說明">請向精舍管理者索取控制台網址貼在下方。您的帳號需已加入該控制台「系統設定」的「授權帳號」。</p>
+      <p class="說明">請向精舍管理者索取控制台網址貼在下方。您的帳號需已加入該控制台「系統設定」的「授權帳號」。新精舍尚未開通時，請聯絡系統管理者。</p>
       <label for="輸入_控制台網址">控制台網址</label>
       <input id="輸入_控制台網址" placeholder="https://docs.google.com/spreadsheets/d/…">
       <button onclick="連結控制台()">連結既有控制台</button>
-      <div id="區_建立控制台" style="display:none">
-      <hr style="border:0;border-top:1px solid var(--線);margin:16px 0">
-      <p class="說明"><b>系統管理者</b>：為新精舍開通控制台。</p>
-      <label for="輸入_精舍名稱">精舍名稱</label>
-      <input id="輸入_精舍名稱" placeholder="例如：普泉精舍">
-      <label for="輸入_精舍管理者">精舍管理者帳號（逗號分隔，會自動加入授權帳號並分享控制台）</label>
-      <input id="輸入_精舍管理者" placeholder="例如：ctpuquan@gmail.com">
-      <button class="次" onclick="建立控制台()">建立新控制台</button>
-      </div>
     </div>
   </section>
 
@@ -339,7 +331,6 @@
       obj狀態 = obj;
       if (!obj.bool成功) { 顯示結果(obj); return; }
       顯示區塊(obj.bool已連結 ? '已連結' : '未連結');
-      document.getElementById('區_建立控制台').style.display = obj.bool系統管理者 ? 'block' : 'none';
       if (!obj.bool已連結) {
         document.getElementById('副標').innerHTML = '使用者：' + 安全文字(obj.str使用者) + '｜尚未連結控制台｜<a href="#" onclick="登出();return false;">登出</a>';
         return;
@@ -477,10 +468,6 @@
   }
   function 連結控制台() {
     呼叫('連結既有控制台', [document.getElementById('輸入_控制台網址').value], function (obj) { 顯示結果(obj); 重新整理(); });
-  }
-  function 建立控制台() {
-    呼叫('建立新控制台', [document.getElementById('輸入_精舍名稱').value, document.getElementById('輸入_精舍管理者').value],
-      function (obj) { 顯示結果(obj); 重新整理(); });
   }
   function 取消連結() {
     if (!confirm('確定要取消連結嗎？控制台試算表不會被刪除，之後可重新連結。')) { return; }

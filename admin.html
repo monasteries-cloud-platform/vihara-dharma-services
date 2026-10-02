@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>法會活動雲端系統｜總管理</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<!--
+  檔案：admin.html（放在 GitHub Pages，與 index.html 同一資料夾）
+  版本：v2.1.0（2026-10-02）新增：總管理頁
+  說明：只給「系統管理者」使用：建立新精舍的控制台、查看所有精舍清單。
+        精舍管理者與工作人員請使用 index.html。
+        後端以「系統管理者」名單把關，非系統管理者即使開啟本頁也無法操作。
+  設定：與 index.html 相同的兩個值（GAS 網址、OAuth 用戶端 ID）。
+-->
+<script>
+  /* ========== 系統設定（部署時修改這兩行） ========== */
+  const obj系統設定 = {
+    strGAS網址: 'https://script.google.com/macros/s/AKfycbzwur7-jEfXaI21GbO4A1RwsfpwCWXCoFpDBSG17gRRLEvvIEfdkGx1UdcXkgmZMoak/exec',
+    str用戶端ID: '1097675230838-cv1dapo9p4mjd2pce026ann20q97fcte.apps.googleusercontent.com'
+  };
+</script>
+<style>
+  :root { --底:#f7f6f2; --卡:#ffffff; --字:#222; --淡字:#666; --線:#ddd8cc; --主:#8a5a12; --主淡:#f3e8d6; --錯:#b3261e; --好:#2e7d32; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif; background:var(--底); color:var(--字); font-size:15px; }
+  header { background:var(--主); color:#fff; padding:14px 16px; }
+  header h1 { margin:0; font-size:18px; }
+  header .副 { font-size:13px; opacity:.9; margin-top:4px; }
+  header a { color:#fff; }
+  main { max-width:1100px; margin:0 auto; padding:16px; }
+
+  /* 索引標籤 */
+  .標籤列 { display:flex; gap:4px; overflow-x:auto; border-bottom:2px solid var(--主); margin-bottom:16px; }
+  .標籤 { flex:0 0 auto; background:#ece7dc; color:var(--字); border:0; border-radius:8px 8px 0 0; padding:10px 14px; font-size:14px; cursor:pointer; margin:0; }
+  .標籤.目前 { background:var(--主); color:#fff; font-weight:600; }
+  .標籤 .數 { display:inline-block; min-width:20px; padding:0 6px; margin-left:6px; border-radius:10px; background:var(--錯); color:#fff; font-size:12px; line-height:18px; }
+  .標籤 .數:empty { display:none; }
+  .頁 { display:none; }
+  .頁.目前 { display:block; }
+
+  .卡 { background:var(--卡); border:1px solid var(--線); border-radius:10px; padding:16px; margin-bottom:16px; }
+  .卡 h2 { margin:0 0 8px; font-size:16px; }
+  .說明 { color:var(--淡字); font-size:13px; margin:0 0 12px; line-height:1.6; }
+  label { display:block; font-size:13px; color:var(--淡字); margin:8px 0 4px; }
+  input, select { width:100%; padding:8px 10px; border:1px solid var(--線); border-radius:6px; font-size:15px; }
+  .列 { display:flex; gap:12px; flex-wrap:wrap; }
+  .列 > div { flex:1 1 220px; }
+  button { background:var(--主); color:#fff; border:0; border-radius:6px; padding:7px 12px; font-size:14px; cursor:pointer; margin:3px 4px 3px 0; }
+  button.次 { background:#fff; color:var(--主); border:1px solid var(--主); }
+  button:disabled { opacity:.45; cursor:wait; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:8px 6px; border-bottom:1px solid var(--線); vertical-align:top; }
+  th { color:var(--淡字); font-weight:600; font-size:13px; }
+  small { color:var(--淡字); }
+  .狀 { display:inline-block; padding:1px 8px; border-radius:10px; font-size:12px; background:var(--主淡); }
+  .狀.演練 { background:#fff3cd; } .狀.正式 { background:#d8ecd9; } .狀.結束 { background:#eee; color:#888; }
+  .提醒數 { color:var(--錯); font-weight:600; }
+  .空 { color:var(--淡字); padding:12px 6px; }
+  .表格框 { overflow-x:auto; }
+
+  /* 大車點名的步驟進度 */
+  .步驟 { display:flex; gap:6px; flex-wrap:wrap; font-size:12px; margin-top:4px; }
+  .步驟 span { padding:2px 8px; border-radius:10px; background:#eee; color:#888; }
+  .步驟 span.完成 { background:#d8ecd9; color:#1b5e20; }
+
+  #結果 { white-space:pre-wrap; display:none; }
+  #結果.好 { border-color:var(--好); }
+  #結果.錯 { border-color:var(--錯); color:var(--錯); }
+  .忙碌 { display:none; color:var(--淡字); font-size:13px; margin:-8px 0 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="標題">法會活動雲端系統｜總管理</h1>
+  <div class="副" id="副標">載入中…</div>
+</header>
+
+<main>
+  <div class="卡" id="結果"></div>
+  <div class="忙碌" id="忙碌">處理中，請勿關閉畫面（最長約 5 分鐘）…</div>
+
+  <!-- ===== 尚未登入 ===== -->
+  <section id="區_登入" style="display:none">
+    <div class="卡">
+      <h2>系統管理者登入</h2>
+      <p class="說明">本頁僅限系統管理者使用。精舍的日常操作請改用「精舍管理」網頁。</p>
+      <div id="登入按鈕"></div>
+    </div>
+  </section>
+
+  <!-- ===== 無權限 ===== -->
+  <section id="區_無權限" style="display:none">
+    <div class="卡">
+      <h2>無法使用總管理</h2>
+      <p class="說明" id="無權限說明"></p>
+      <button class="次" onclick="登出()">登出</button>
+    </div>
+  </section>
+
+  <!-- ===== 總管理 ===== -->
+  <section id="區_總管理" style="display:none">
+    <div class="卡">
+      <h2>建立新精舍的控制台</h2>
+      <p class="說明">系統會在系統帳號的雲端硬碟建立一份控制台試算表，把精舍管理者加入授權帳號並共用。建好後，把控制台網址交給精舍管理者，由他登入「精舍管理」網頁貼上連結。</p>
+      <label for="輸入_精舍名稱">精舍名稱</label>
+      <input id="輸入_精舍名稱" placeholder="例如：普泉精舍">
+      <label for="輸入_精舍管理者">精舍管理者帳號（逗號分隔，會自動加入授權帳號並分享控制台）</label>
+      <input id="輸入_精舍管理者" placeholder="例如：ctpuquan@gmail.com">
+      <button onclick="建立控制台()">建立新控制台</button>
+    </div>
+
+    <div class="卡">
+      <h2>精舍清單</h2>
+      <p class="說明" id="清單說明"></p>
+      <div class="表格框">
+        <table>
+          <thead><tr><th>精舍</th><th>管理者</th><th>建立時間</th><th>控制台</th></tr></thead>
+          <tbody id="表_精舍"></tbody>
+        </table>
+      </div>
+      <button class="次" onclick="重新整理()">重新整理</button>
+    </div>
+  </section>
+</main>
+
+<script>
+  /* ========== 共用工具 ========== */
+  function 安全文字(str) {
+    return String(str === undefined || str === null ? '' : str)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function 設定忙碌(bool忙碌) {
+    document.querySelectorAll('button').forEach(function (b) { b.disabled = bool忙碌; });
+    document.getElementById('忙碌').style.display = bool忙碌 ? 'block' : 'none';
+  }
+  function 顯示結果(obj) {
+    const el = document.getElementById('結果');
+    if (!obj) { el.style.display = 'none'; return; }
+    el.className = '卡 ' + (obj.bool成功 ? '好' : '錯');
+    el.textContent = obj.str訊息 || '';
+    el.style.display = 'block';
+    window.scrollTo(0, 0);
+  }
+
+  /* ========== 登入 ========== */
+  let str登入憑證 = '';   // Google ID Token（約 1 小時有效），只存在記憶體
+
+  function 初始化登入() {
+    if (!window.google || !google.accounts || !google.accounts.id) { setTimeout(初始化登入, 200); return; }
+    google.accounts.id.initialize({
+      client_id: obj系統設定.str用戶端ID,
+      callback: function (obj回應) { str登入憑證 = obj回應.credential; 顯示結果(null); 重新整理(); },
+      auto_select: true
+    });
+    google.accounts.id.renderButton(document.getElementById('登入按鈕'), { theme: 'filled_brown', size: 'large', text: 'signin_with', locale: 'zh-TW' });
+    google.accounts.id.prompt();
+    顯示區塊('登入');
+  }
+  function 登出() {
+    str登入憑證 = '';
+    if (window.google && google.accounts && google.accounts.id) { google.accounts.id.disableAutoSelect(); }
+    document.getElementById('副標').textContent = '已登出';
+    顯示結果(null);
+    顯示區塊('登入');
+  }
+  function 顯示區塊(str名稱) {
+    ['登入', '無權限', '總管理'].forEach(function (k) {
+      document.getElementById('區_' + k).style.display = (k === str名稱) ? 'block' : 'none';
+    });
+  }
+
+  /* ========== 呼叫 GAS API（text/plain 的 JSON，避免跨網域預檢） ========== */
+  function 呼叫(str動作, arr參數, fn完成) {
+    if (!str登入憑證) { 顯示區塊('登入'); return; }
+    設定忙碌(true);
+    fetch(obj系統設定.strGAS網址, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ 動作: str動作, 參數: arr參數 || [], 憑證: str登入憑證 })
+    })
+      .then(function (r) { if (!r.ok) { throw new Error('HTTP ' + r.status); } return r.json(); })
+      .then(function (obj) {
+        設定忙碌(false);
+        if (obj.bool需重新登入) {
+          str登入憑證 = '';
+          顯示結果({ bool成功: false, str訊息: obj.str訊息 });
+          顯示區塊('登入');
+          return;
+        }
+        fn完成(obj);
+      })
+      .catch(function (err) {
+        設定忙碌(false);
+        顯示結果({ bool成功: false, str訊息: '無法連線到系統（GAS），請確認網路後再試。\n（' + err.message + '）' });
+      });
+  }
+
+  /* ========== 讀取精舍清單 ========== */
+  function 重新整理() {
+    呼叫('取得精舍清單', [], function (obj) {
+      if (!obj.bool成功) {
+        // 後端判定不是系統管理者
+        document.getElementById('副標').innerHTML = '<a href="#" onclick="登出();return false;">登出</a>';
+        document.getElementById('無權限說明').textContent = obj.str訊息 + '（若您是精舍的管理者或工作人員，請使用「精舍管理」網頁。）';
+        顯示區塊('無權限');
+        return;
+      }
+      顯示區塊('總管理');
+      document.getElementById('副標').innerHTML = '系統管理者已登入｜<a href="#" onclick="登出();return false;">登出</a>';
+      const arr = obj.arr精舍 || [];
+      document.getElementById('清單說明').textContent = obj.str訊息;
+      document.getElementById('表_精舍').innerHTML = arr.length === 0
+        ? '<tr><td colspan="4" class="空">還沒有建立任何精舍。</td></tr>'
+        : arr.map(function (o) {
+            return '<tr><td><b>' + 安全文字(o.str精舍名稱) + '</b></td>' +
+              '<td>' + 安全文字(o.str管理者 || '—') + '</td>' +
+              '<td>' + 安全文字(o.str建立時間) + '<br><small>' + 安全文字(o.str建立者) + '</small></td>' +
+              '<td><a href="' + 安全文字(o.str控制台網址) + '" target="_blank">開啟</a></td></tr>';
+          }).join('');
+    });
+  }
+
+  function 建立控制台() {
+    const str名稱 = document.getElementById('輸入_精舍名稱').value;
+    if (!str名稱.trim()) { 顯示結果({ bool成功: false, str訊息: '請先填寫精舍名稱。' }); return; }
+    呼叫('建立新控制台', [str名稱, document.getElementById('輸入_精舍管理者').value], function (obj) {
+      顯示結果(obj);
+      if (obj.bool成功) {
+        document.getElementById('輸入_精舍名稱').value = '';
+        document.getElementById('輸入_精舍管理者').value = '';
+        重新整理();
+        // 重新整理會清掉不了結果卡；結果訊息保留顯示
+      }
+    });
+  }
+
+  /* 啟動：先登入，登入成功後自動讀取精舍清單 */
+  初始化登入();
+</script>
+</body>
+</html>
