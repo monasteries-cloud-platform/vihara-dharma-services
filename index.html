@@ -7,7 +7,8 @@
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <!--
   檔案：index.html（放在 GitHub Pages）
-  版本：v2.1.0（2026-10-02）同步頁新增「待同步」欄與「檢查新回應」按鈕；筆數改名「已同步」
+  版本：v2.2.0（2026-10-02）角色：精舍管理者／承辦人。承辦人只看到分配給自己的活動，看不到登錄、指派、轉正式、結束
+        v2.1.0（2026-10-02）同步頁新增「待同步」欄與「檢查新回應」按鈕；筆數改名「已同步」
         v2.1.0（2026-10-02）精舍端與總管理端分開網址：本頁不再有「建立新控制台」（移到 admin.html）
         v2.0.0（2026-10-02）改為 GitHub 網頁：以 fetch 呼叫 GAS API、Google 帳號登入
         v1.2.0（2026-10-01）索引標籤，依操作流程排列
@@ -116,7 +117,7 @@
 
     <!-- ① 登錄活動 -->
     <div class="頁" id="頁_登錄">
-      <div class="卡">
+      <div class="卡" id="卡_新增活動">
         <h2>步驟 1：新增活動</h2>
         <p class="說明">貼上這場活動 Google 表單的「回覆試算表」網址。舊活動不需登錄。</p>
         <div class="列">
@@ -126,6 +127,8 @@
         </div>
         <label for="輸入_來源網址">原始回覆試算表網址</label>
         <input id="輸入_來源網址" placeholder="https://docs.google.com/spreadsheets/d/…">
+        <label for="輸入_承辦人">承辦人（可不填，之後可在「④ 活動管理」指派；多人以逗號分隔）</label>
+        <input id="輸入_承辦人" placeholder="例如：staff1@gmail.com, staff2@gmail.com">
         <button onclick="新增活動()">新增活動</button>
       </div>
       <div class="卡">
@@ -181,9 +184,9 @@
     <div class="頁" id="頁_管理">
       <div class="卡">
         <h2>活動管理</h2>
-        <p class="說明">活動結束後設為「結束」：不再同步；對外活動會把點名系統「活動配置」改為「停用」。</p>
+        <p class="說明">活動結束後設為「結束」：不再同步；對外活動會把點名系統「活動配置」改為「停用」。<br><b>承辦人</b>：管理者可針對每個活動指派一位或多位承辦人（逗號分隔）。承辦人登入後只看得到自己的活動，可建立副本、同步、產生點名資料與匯出；指派時整理副本會自動共用給他（編輯者），移除時收回。轉為正式、退回演練、結束活動只有精舍管理者能操作。</p>
         <div class="表格框"><table>
-          <thead><tr><th>活動</th><th>類型</th><th>狀態</th><th>檔案</th><th>操作</th></tr></thead>
+          <thead><tr><th>活動</th><th>類型</th><th>狀態</th><th>承辦人</th><th>檔案</th><th>操作</th></tr></thead>
           <tbody id="表_管理"></tbody>
         </table></div>
       </div>
@@ -194,10 +197,10 @@
       <div class="卡">
         <h2>控制台</h2>
         <p class="說明" id="控制台資訊"></p>
-        <p class="說明">「授權帳號」「預設點名試算表」等請到控制台試算表的「系統設定」分頁填寫。<br>
+        <p class="說明">「授權帳號」（＝精舍管理者名單）、「預設點名試算表」等請到控制台試算表的「系統設定」分頁填寫。<br>
           表單、原始回覆試算表所在資料夾、點名試算表，都需以「編輯者」共用給系統帳號，系統才能存取。</p>
         <button class="次" onclick="重新整理()">重新整理畫面</button>
-        <button class="次" onclick="執行('修復控制台')">檢查並補齊控制台</button>
+        <button class="次" id="鈕_修復控制台" onclick="執行('修復控制台')">檢查並補齊控制台</button>
         <button class="次" onclick="取消連結()">取消連結（改連其他精舍）</button>
       </div>
     </div>
@@ -209,6 +212,7 @@
   let obj狀態 = null;        // 伺服器回傳的最新狀態
   let str目前標籤 = '登錄';   // 目前顯示的標籤
   let obj待同步 = {};        // { 活動ID: 待同步筆數 }，由「檢查新回應」填入；沒有該活動ID＝尚未檢查
+  let bool管理者 = true;      // 目前登入者是否為精舍管理者（承辦人為 false，只用來隱藏按鈕；真正的權限檢查在後端）
   let bool已自動檢查 = false; // 每次載入網頁只自動檢查一次
 
   /* ========== 共用工具 ========== */
@@ -310,7 +314,8 @@
   }
 
   function 活動名稱格(o) {
-    return '<b>' + 安全文字(o.str活動名稱) + '</b><br><small>' + 安全文字(o.str活動ID) + '</small>';
+    return '<b>' + 安全文字(o.str活動名稱) + '</b><br><small>' + 安全文字(o.str活動ID) +
+      (o.str承辦人 ? '｜承辦：' + 安全文字(o.str承辦人) : '') + '</small>';
   }
   function 狀態格(o) {
     return '<span class="狀 ' + 安全文字(o.str活動狀態) + '">' + 安全文字(o.str活動狀態) + '</span>';
@@ -346,9 +351,12 @@
         document.getElementById('副標').innerHTML = '使用者：' + 安全文字(obj.str使用者) + '｜尚未連結控制台｜<a href="#" onclick="登出();return false;">登出</a>';
         return;
       }
-      document.getElementById('標題').textContent = obj.str精舍名稱 + '｜活動資料整理';
-      document.getElementById('副標').innerHTML = '使用者：' + 安全文字(obj.str使用者) +
-        '｜<a href="' + 安全文字(obj.str控制台網址) + '" target="_blank">開啟控制台試算表</a>' +
+      bool管理者 = obj.bool精舍管理者 !== false;
+      document.getElementById('卡_新增活動').style.display = bool管理者 ? 'block' : 'none';
+      document.getElementById('鈕_修復控制台').style.display = bool管理者 ? 'inline-block' : 'none';
+      document.getElementById('標題').textContent = obj.str精舍名稱 + '｜精舍管理';
+      document.getElementById('副標').innerHTML = '使用者：' + 安全文字(obj.str使用者) + '（' + 安全文字(obj.str角色) + '）' +
+        (bool管理者 ? '｜<a href="' + 安全文字(obj.str控制台網址) + '" target="_blank">開啟控制台試算表</a>' : '') +
         '｜<a href="#" onclick="登出();return false;">登出</a>';
       document.getElementById('控制台資訊').innerHTML = '精舍：' + 安全文字(obj.str精舍名稱) +
         '<br>控制台：<a href="' + 安全文字(obj.str控制台網址) + '" target="_blank">' + 安全文字(obj.str控制台網址) + '</a>';
@@ -423,7 +431,8 @@
             str操作 += 按鈕('產生點名', '4 產生點名資料', o.str活動ID);
             str操作 += 按鈕('匯出點名', '5 匯出點名系統', o.str活動ID);
           }
-          if (str狀 === '演練') { str操作 += 按鈕('轉為正式', '6 轉為正式', o.str活動ID, '次'); }
+          if (str狀 === '演練' && bool管理者) { str操作 += 按鈕('轉為正式', '6 轉為正式', o.str活動ID, '次'); }
+          if (str狀 === '演練' && !bool管理者) { str操作 += '<small>轉為正式請由精舍管理者操作</small>'; }
           if (str狀 === '正式') { str操作 += '<small>名單已鎖定，請在點名系統修改</small>'; }
           return '<tr><td>' + 活動名稱格(o) + '</td><td>' + 狀態格(o) + '</td><td>' + str進度 + '</td><td>' +
             檔案連結(o, ['副本', '點名表']) + '</td><td>' + str操作 + '</td></tr>';
@@ -433,16 +442,25 @@
   /* ④ 活動管理：全部活動 */
   function 畫管理頁(arr) {
     document.getElementById('表_管理').innerHTML = arr.length === 0
-      ? 空列(5, '尚無活動。')
+      ? 空列(6, bool管理者 ? '尚無活動。' : '目前沒有分配給您的活動。')
       : arr.map(function (o) {
           const str狀 = o.str活動狀態;
           let str操作 = '';
-          if (str狀 === '正式') { str操作 += 按鈕('退回演練', '退回演練', o.str活動ID, '次'); }
-          str操作 += (str狀 === '結束')
-            ? '<button class="次" onclick="設定狀態(\'' + o.str活動ID + '\',\'收件中\')">恢復收件中</button>'
-            : '<button class="次" onclick="設定狀態(\'' + o.str活動ID + '\',\'結束\')">設為結束</button>';
+          let str承辦格 = '';
+          if (bool管理者) {
+            if (str狀 === '正式') { str操作 += 按鈕('退回演練', '退回演練', o.str活動ID, '次'); }
+            str操作 += (str狀 === '結束')
+              ? '<button class="次" onclick="設定狀態(\'' + o.str活動ID + '\',\'收件中\')">恢復收件中</button>'
+              : '<button class="次" onclick="設定狀態(\'' + o.str活動ID + '\',\'結束\')">設為結束</button>';
+            // 管理者可直接改承辦人；留空＝取消全部
+            str承辦格 = '<input id="承辦人_' + 安全文字(o.str活動ID) + '" value="' + 安全文字(o.str承辦人) +
+              '" placeholder="帳號，逗號分隔" style="min-width:180px"><button class="次" onclick="設定承辦人(\'' + o.str活動ID + '\')">指派</button>';
+          } else {
+            str操作 = '<small>轉為正式、結束活動請由精舍管理者操作</small>';
+            str承辦格 = 安全文字(o.str承辦人 || '—');
+          }
           return '<tr><td>' + 活動名稱格(o) + '</td><td>' + 安全文字(o.str活動類型) + '</td><td>' + 狀態格(o) +
-            '</td><td>' + 檔案連結(o, ['原始表', '副本', '點名表']) + '</td><td>' + str操作 + '</td></tr>';
+            '</td><td>' + str承辦格 + '</td><td>' + 檔案連結(o, ['原始表', '副本', '點名表']) + '</td><td>' + str操作 + '</td></tr>';
         }).join('');
   }
 
@@ -484,14 +502,21 @@
     const str名稱 = document.getElementById('輸入_活動名稱').value;
     const str類型 = document.getElementById('輸入_活動類型').value;
     const str網址 = document.getElementById('輸入_來源網址').value;
-    呼叫('新增活動', [str名稱, str類型, str網址], function (obj) {
+    const str承辦人 = document.getElementById('輸入_承辦人').value;
+    呼叫('新增活動', [str名稱, str類型, str網址, str承辦人], function (obj) {
       顯示結果(obj);
       if (obj.bool成功) {
         document.getElementById('輸入_活動名稱').value = '';
         document.getElementById('輸入_來源網址').value = '';
+        document.getElementById('輸入_承辦人').value = '';
       }
       重新整理();
     });
+  }
+  /* 指派承辦人：管理者在「④ 活動管理」修改該活動的承辦人欄後按「指派」 */
+  function 設定承辦人(str活動ID) {
+    const str帳號 = document.getElementById('承辦人_' + str活動ID).value;
+    呼叫('設定承辦人', [str活動ID, str帳號], function (obj) { 顯示結果(obj); 重新整理(); });
   }
   function 設定狀態(str活動ID, str狀態) {
     if (str狀態 === '結束' && !confirm('確定把這場活動設為結束？之後不再同步。')) { return; }
