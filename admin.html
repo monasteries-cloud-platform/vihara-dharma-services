@@ -7,8 +7,9 @@
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <!--
   檔案：admin.html（放在 GitHub Pages，與 index.html 同一資料夾）
-  版本：v2.1.0（2026-10-02）新增：總管理頁
-  說明：只給「系統管理者」使用：建立新精舍的控制台、查看所有精舍清單。
+  版本：v2.3.0（2026-10-02）建立精舍時同時建立「精舍管理者」代號／密碼帳號（臨時密碼只顯示一次）；新增「帳號管理」（可為任一精舍建立管理者／承辦人、重設密碼、停用）
+        v2.1.0（2026-10-02）新增：總管理頁
+  說明：只給「系統管理者」使用（以 Google 帳號登入）：建立新精舍的控制台與管理者帳號、管理各精舍帳號、查看所有精舍清單。
         精舍管理者與工作人員請使用 index.html。
         後端以「系統管理者」名單把關，非系統管理者即使開啟本頁也無法操作。
   設定：與 index.html 相同的兩個值（GAS 網址、OAuth 用戶端 ID）。
@@ -101,13 +102,33 @@
   <!-- ===== 總管理 ===== -->
   <section id="區_總管理" style="display:none">
     <div class="卡">
-      <h2>建立新精舍的控制台</h2>
-      <p class="說明">系統會在系統帳號的雲端硬碟建立一份控制台試算表，把精舍管理者加入授權帳號並共用。建好後，把控制台網址交給精舍管理者，由他登入「精舍管理」網頁貼上連結。</p>
-      <label for="輸入_精舍名稱">精舍名稱</label>
-      <input id="輸入_精舍名稱" placeholder="例如：普泉精舍">
-      <label for="輸入_精舍管理者">精舍管理者帳號（逗號分隔，會自動加入授權帳號並分享控制台）</label>
-      <input id="輸入_精舍管理者" placeholder="例如：ctpuquan@gmail.com">
-      <button onclick="建立控制台()">建立新控制台</button>
+      <h2>建立新精舍</h2>
+      <p class="說明">系統會在系統帳號的雲端硬碟建立一份控制台試算表，並建立「精舍管理者」的代號／密碼帳號。<b>臨時密碼只顯示一次</b>，請當場抄下並告知管理者；管理者到「精舍管理」網頁用代號與臨時密碼登入，第一次登入會被要求設定自己的新密碼。</p>
+      <div class="列">
+        <div><label for="輸入_精舍名稱">精舍名稱</label><input id="輸入_精舍名稱" placeholder="例如：普泉精舍"></div>
+        <div><label for="輸入_管理者代號">管理者帳號代號（英文小寫／數字）</label><input id="輸入_管理者代號" placeholder="例如：puquan01" autocapitalize="off" spellcheck="false"></div>
+        <div><label for="輸入_管理者姓名">管理者姓名</label><input id="輸入_管理者姓名"></div>
+        <div><label for="輸入_管理者信箱">管理者 Google 帳號（選填）</label><input id="輸入_管理者信箱" placeholder="有填才會共用控制台與副本"></div>
+      </div>
+      <button onclick="建立控制台()">建立新精舍</button>
+    </div>
+
+    <div class="卡">
+      <h2>帳號管理</h2>
+      <p class="說明">選擇精舍後，可新增該精舍的管理者或承辦人帳號、重設密碼、停用帳號。每次新增或重設都會產生臨時密碼（只顯示一次）。</p>
+      <label for="選_精舍">精舍</label>
+      <select id="選_精舍" onchange="載入帳號清單()"></select>
+      <div class="列">
+        <div><label for="新帳號_代號">新帳號代號</label><input id="新帳號_代號" autocapitalize="off" spellcheck="false"></div>
+        <div><label for="新帳號_姓名">姓名</label><input id="新帳號_姓名"></div>
+        <div><label for="新帳號_角色">角色</label><select id="新帳號_角色"><option>精舍管理者</option><option>承辦人</option></select></div>
+        <div><label for="新帳號_信箱">Google 帳號（選填）</label><input id="新帳號_信箱"></div>
+      </div>
+      <button onclick="新增帳號()">新增帳號</button>
+      <div class="表格框"><table>
+        <thead><tr><th>代號／姓名</th><th>角色</th><th>Google 帳號</th><th>狀態</th><th>最後登入</th><th>操作</th></tr></thead>
+        <tbody id="表_帳號"></tbody>
+      </table></div>
     </div>
 
     <div class="卡">
@@ -138,7 +159,7 @@
     const el = document.getElementById('結果');
     if (!obj) { el.style.display = 'none'; return; }
     el.className = '卡 ' + (obj.bool成功 ? '好' : '錯');
-    el.textContent = obj.str訊息 || '';
+    el.textContent = (obj.str訊息 || '') + ((obj.arr明細 || []).length ? '\n\n' + obj.arr明細.join('\n') : '');
     el.style.display = 'block';
     window.scrollTo(0, 0);
   }
@@ -210,6 +231,13 @@
       document.getElementById('副標').innerHTML = '系統管理者已登入｜<a href="#" onclick="登出();return false;">登出</a>';
       const arr = obj.arr精舍 || [];
       document.getElementById('清單說明').textContent = obj.str訊息;
+      // 帳號管理的精舍下拉選單（保留目前選擇）
+      const el選 = document.getElementById('選_精舍');
+      const str原選 = el選.value;
+      el選.innerHTML = '<option value="">（請選擇精舍）</option>' + arr.map(function (o) {
+        return '<option value="' + 安全文字(o.str控制台ID) + '">' + 安全文字(o.str精舍名稱) + '</option>';
+      }).join('');
+      el選.value = str原選;
       document.getElementById('表_精舍').innerHTML = arr.length === 0
         ? '<tr><td colspan="4" class="空">還沒有建立任何精舍。</td></tr>'
         : arr.map(function (o) {
@@ -224,15 +252,63 @@
   function 建立控制台() {
     const str名稱 = document.getElementById('輸入_精舍名稱').value;
     if (!str名稱.trim()) { 顯示結果({ bool成功: false, str訊息: '請先填寫精舍名稱。' }); return; }
-    呼叫('建立新控制台', [str名稱, document.getElementById('輸入_精舍管理者').value], function (obj) {
+    呼叫('建立新控制台', [str名稱, document.getElementById('輸入_管理者代號').value,
+      document.getElementById('輸入_管理者姓名').value, document.getElementById('輸入_管理者信箱').value], function (obj) {
       顯示結果(obj);
       if (obj.bool成功) {
-        document.getElementById('輸入_精舍名稱').value = '';
-        document.getElementById('輸入_精舍管理者').value = '';
+        ['輸入_精舍名稱', '輸入_管理者代號', '輸入_管理者姓名', '輸入_管理者信箱'].forEach(function (k) { document.getElementById(k).value = ''; });
         重新整理();
-        // 重新整理會清掉不了結果卡；結果訊息保留顯示
       }
     });
+  }
+
+  /* ========== 帳號管理 ========== */
+  function 目前精舍() { return document.getElementById('選_精舍').value; }
+
+  function 載入帳號清單() {
+    const str精舍 = 目前精舍();
+    if (!str精舍) { document.getElementById('表_帳號').innerHTML = '<tr><td colspan="6" class="空">請先選擇精舍。</td></tr>'; return; }
+    呼叫('列出帳號', [str精舍], function (obj) {
+      if (!obj.bool成功) { 顯示結果(obj); return; }
+      const arr = obj.arr帳號 || [];
+      document.getElementById('表_帳號').innerHTML = arr.length === 0
+        ? '<tr><td colspan="6" class="空">這間精舍還沒有帳號。</td></tr>'
+        : arr.map(function (o) {
+            const str代 = 安全文字(o.str代號);
+            const str狀 = o.bool停用 ? '<span class="狀 結束">已停用</span>'
+              : (o.bool鎖定中 ? '<span class="狀 演練">暫時鎖定</span>'
+              : (o.bool須改密碼 ? '<span class="狀 演練">待改密碼</span>' : '<span class="狀 正式">正常</span>'));
+            return '<tr><td><b>' + str代 + '</b><br><small>' + 安全文字(o.str姓名) + '</small></td><td>' + 安全文字(o.str角色) +
+              '</td><td>' + 安全文字(o.str信箱 || '—') + '</td><td>' + str狀 + '</td><td><small>' + 安全文字(o.str最後登入 || '—') + '</small></td><td>' +
+              '<button class="次" onclick="重設密碼(\'' + str代 + '\')">重設密碼</button>' +
+              '<button class="次" onclick="設定帳號停用(\'' + str代 + '\',' + (o.bool停用 ? 'false' : 'true') + ')">' + (o.bool停用 ? '啟用' : '停用') + '</button>' +
+              '<button class="次" onclick="設定帳號信箱(\'' + str代 + '\')">設定Google帳號</button></td></tr>';
+          }).join('');
+    });
+  }
+  function 新增帳號() {
+    if (!目前精舍()) { 顯示結果({ bool成功: false, str訊息: '請先選擇精舍。' }); return; }
+    呼叫('新增帳號', [目前精舍(), document.getElementById('新帳號_代號').value, document.getElementById('新帳號_姓名').value,
+      document.getElementById('新帳號_角色').value, document.getElementById('新帳號_信箱').value], function (obj) {
+      顯示結果(obj);
+      if (obj.bool成功) {
+        ['新帳號_代號', '新帳號_姓名', '新帳號_信箱'].forEach(function (k) { document.getElementById(k).value = ''; });
+        載入帳號清單();
+      }
+    });
+  }
+  function 重設密碼(str代號) {
+    if (!confirm('確定要重設「' + str代號 + '」的密碼？舊密碼會立即失效。')) { return; }
+    呼叫('重設密碼', [str代號], function (obj) { 顯示結果(obj); 載入帳號清單(); });
+  }
+  function 設定帳號停用(str代號, bool停用) {
+    if (bool停用 && !confirm('確定停用「' + str代號 + '」？對方會立即無法登入。')) { return; }
+    呼叫('設定帳號停用', [str代號, bool停用], function (obj) { 顯示結果(obj); 載入帳號清單(); });
+  }
+  function 設定帳號信箱(str代號) {
+    const str輸入 = prompt('請輸入「' + str代號 + '」的 Google 帳號（Gmail）。留空＝清除。', '');
+    if (str輸入 === null) { return; }
+    呼叫('設定帳號信箱', [str代號, str輸入], function (obj) { 顯示結果(obj); 載入帳號清單(); });
   }
 
   /* 啟動：先登入，登入成功後自動讀取精舍清單 */

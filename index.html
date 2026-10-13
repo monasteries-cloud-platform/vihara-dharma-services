@@ -4,10 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>法會活動雲端系統｜精舍管理</title>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 <!--
   檔案：index.html（放在 GitHub Pages）
-  版本：v2.2.0（2026-10-02）角色：精舍管理者／承辦人。承辦人只看到分配給自己的活動，看不到登錄、指派、轉正式、結束
+  版本：v2.5.0（2026-10-13）② 同步與整理新增「重複標示」：在副本試算表內設定姓名重複標色與「重複檢查」分頁（建立副本時也會自動設定）
+        v2.3.0（2026-10-02）登入改為「代號＋密碼」（不再使用 Google 登入）；第一次登入強制改密碼；新增「⑥ 帳號管理」（精舍管理者建立／重設承辦人帳號）；移除「連結控制台」
+        v2.2.0（2026-10-02）角色：精舍管理者／承辦人。承辦人只看到分配給自己的活動，看不到登錄、指派、轉正式、結束
         v2.1.0（2026-10-02）同步頁新增「待同步」欄與「檢查新回應」按鈕；筆數改名「已同步」
         v2.1.0（2026-10-02）精舍端與總管理端分開網址：本頁不再有「建立新控制台」（移到 admin.html）
         v2.0.0（2026-10-02）改為 GitHub 網頁：以 fetch 呼叫 GAS API、Google 帳號登入
@@ -16,13 +17,12 @@
         標籤順序＝操作流程：① 登錄活動 → ② 同步與整理 → ③ 大車點名 → ④ 活動管理 → ⑤ 控制台
         每個標籤只列出「這一步需要處理的活動」與該步驟的按鈕。
         畫面不存任何資料；每次操作完成後向伺服器重新讀取狀態。
-  設定：只需修改下方「系統設定」的兩個值（GAS 網址、OAuth 用戶端 ID）。
+  設定：只需修改下方「系統設定」的 GAS 網址。
 -->
 <script>
-  /* ========== 系統設定（部署時修改這兩行） ========== */
+  /* ========== 系統設定（部署時修改這一行） ========== */
   const obj系統設定 = {
-    strGAS網址: 'https://script.google.com/macros/s/AKfycbzwur7-jEfXaI21GbO4A1RwsfpwCWXCoFpDBSG17gRRLEvvIEfdkGx1UdcXkgmZMoak/exec',
-    str用戶端ID: '1097675230838-cv1dapo9p4mjd2pce026ann20q97fcte.apps.googleusercontent.com'
+    strGAS網址: 'https://script.google.com/macros/s/AKfycbzwur7-jEfXaI21GbO4A1RwsfpwCWXCoFpDBSG17gRRLEvvIEfdkGx1UdcXkgmZMoak/exec'
   };
 </script>
 <style>
@@ -87,21 +87,34 @@
 
   <!-- ===== 尚未登入 ===== -->
   <section id="區_登入" style="display:none">
-    <div class="卡">
-      <h2>請使用 Google 帳號登入</h2>
-      <p class="說明">登入後，系統會依您的帳號找到所屬精舍的控制台。帳號需在精舍控制台的「授權帳號」名單中。</p>
-      <div id="登入按鈕"></div>
+    <div class="卡" style="max-width:420px">
+      <h2>請登入</h2>
+      <p class="說明">請輸入精舍管理者提供給您的「代號」與「密碼」。第一次登入使用的是臨時密碼，登入後系統會請您設定自己的新密碼。忘記密碼請聯絡您精舍的管理者重設。</p>
+      <form onsubmit="登入();return false;" autocomplete="on">
+        <label for="輸入_代號">代號</label>
+        <input id="輸入_代號" name="username" autocomplete="username" autocapitalize="off" spellcheck="false">
+        <label for="輸入_密碼">密碼</label>
+        <input id="輸入_密碼" name="password" type="password" autocomplete="current-password">
+        <button type="submit" style="margin-top:12px">登入</button>
+      </form>
     </div>
   </section>
 
-  <!-- ===== 尚未連結控制台 ===== -->
-  <section id="區_未連結" style="display:none">
-    <div class="卡">
-      <h2>第一次使用：連結您精舍的控制台</h2>
-      <p class="說明">請向精舍管理者索取控制台網址貼在下方。您的帳號需已加入該控制台「系統設定」的「授權帳號」。新精舍尚未開通時，請聯絡系統管理者。</p>
-      <label for="輸入_控制台網址">控制台網址</label>
-      <input id="輸入_控制台網址" placeholder="https://docs.google.com/spreadsheets/d/…">
-      <button onclick="連結控制台()">連結既有控制台</button>
+  <!-- ===== 第一次登入／被重設密碼：必須先改密碼 ===== -->
+  <section id="區_改密碼" style="display:none">
+    <div class="卡" style="max-width:420px">
+      <h2>請先設定您自己的新密碼</h2>
+      <p class="說明">您目前使用的是臨時密碼。新密碼至少 8 個字元，需同時包含英文字母與數字。設定完成後才能使用系統。</p>
+      <form onsubmit="變更密碼('強制');return false;" autocomplete="off">
+        <label for="強制_舊密碼">目前（臨時）密碼</label>
+        <input id="強制_舊密碼" type="password" autocomplete="current-password">
+        <label for="強制_新密碼">新密碼</label>
+        <input id="強制_新密碼" type="password" autocomplete="new-password">
+        <label for="強制_確認密碼">再輸入一次新密碼</label>
+        <input id="強制_確認密碼" type="password" autocomplete="new-password">
+        <button type="submit" style="margin-top:12px">設定新密碼</button>
+        <button type="button" class="次" onclick="登出()">登出</button>
+      </form>
     </div>
   </section>
 
@@ -112,7 +125,8 @@
       <button class="標籤" data-頁="同步" onclick="切換標籤('同步')">② 同步與整理<span class="數" id="數_同步"></span></button>
       <button class="標籤" data-頁="點名" onclick="切換標籤('點名')">③ 大車點名</button>
       <button class="標籤" data-頁="管理" onclick="切換標籤('管理')">④ 活動管理</button>
-      <button class="標籤" data-頁="控制台" onclick="切換標籤('控制台')">⑤ 控制台</button>
+      <button class="標籤" data-頁="控制台" onclick="切換標籤('控制台')">⑤ 控制台與密碼</button>
+      <button class="標籤" data-頁="帳號" id="標籤_帳號" onclick="切換標籤('帳號')">⑥ 帳號管理</button>
     </nav>
 
     <!-- ① 登錄活動 -->
@@ -127,8 +141,8 @@
         </div>
         <label for="輸入_來源網址">原始回覆試算表網址</label>
         <input id="輸入_來源網址" placeholder="https://docs.google.com/spreadsheets/d/…">
-        <label for="輸入_承辦人">承辦人（可不填，之後可在「④ 活動管理」指派；多人以逗號分隔）</label>
-        <input id="輸入_承辦人" placeholder="例如：staff1@gmail.com, staff2@gmail.com">
+        <label for="輸入_承辦人">承辦人帳號代號（可不填，之後可在「④ 活動管理」指派；多人以逗號分隔；需先在「⑥ 帳號管理」建立帳號）</label>
+        <input id="輸入_承辦人" placeholder="例如：wang01, lee02">
         <button onclick="新增活動()">新增活動</button>
       </div>
       <div class="卡">
@@ -146,7 +160,7 @@
     <div class="頁" id="頁_同步">
       <div class="卡">
         <h2>步驟 3：同步新報名</h2>
-        <p class="說明">把表單的新回應追加到副本最後（淺黃底色）。已在副本刪除或移到「無效資料」的資料不會再加回來。之後請直接開啟副本整理：修正、刪除重複、分車、新增欄位。<br><b>待同步</b>＝表單已收到、但還沒追加到副本的新回應數；進入本頁會自動檢查一次，也可按「檢查新回應」隨時更新（只查看，不會改動任何資料）。<b>已同步</b>＝系統累計追加過的筆數，不含人工移除的資料。</p>
+        <p class="說明">把表單的新回應追加到副本最後（淺黃底色）。已在副本刪除或移到「無效資料」的資料不會再加回來。之後請直接開啟副本整理：修正、刪除重複、分車、新增欄位。<b>副本內姓名重複的列會自動標淡橘色，「重複檢查」分頁可看清單；舊副本請按該活動的「重複標示」補設定。</b><br><b>待同步</b>＝表單已收到、但還沒追加到副本的新回應數；進入本頁會自動檢查一次，也可按「檢查新回應」隨時更新（只查看，不會改動任何資料）。<b>已同步</b>＝系統累計追加過的筆數，不含人工移除的資料。</p>
         <button class="次" onclick="檢查新回應()">檢查新回應</button>
         <button onclick="執行('同步','全部')">同步全部活動</button>
         <div class="表格框"><table>
@@ -192,16 +206,48 @@
       </div>
     </div>
 
-    <!-- ⑤ 控制台 -->
+    <!-- ⑤ 控制台與密碼 -->
     <div class="頁" id="頁_控制台">
       <div class="卡">
-        <h2>控制台</h2>
+        <h2>精舍與帳號</h2>
         <p class="說明" id="控制台資訊"></p>
-        <p class="說明">「授權帳號」（＝精舍管理者名單）、「預設點名試算表」等請到控制台試算表的「系統設定」分頁填寫。<br>
-          表單、原始回覆試算表所在資料夾、點名試算表，都需以「編輯者」共用給系統帳號，系統才能存取。</p>
         <button class="次" onclick="重新整理()">重新整理畫面</button>
         <button class="次" id="鈕_修復控制台" onclick="執行('修復控制台')">檢查並補齊控制台</button>
-        <button class="次" onclick="取消連結()">取消連結（改連其他精舍）</button>
+      </div>
+      <div class="卡" style="max-width:480px">
+        <h2>變更我的密碼</h2>
+        <p class="說明">新密碼至少 8 個字元，需同時包含英文字母與數字。變更後其他已登入的畫面會自動登出。</p>
+        <label for="一般_舊密碼">目前的密碼</label>
+        <input id="一般_舊密碼" type="password" autocomplete="current-password">
+        <label for="一般_新密碼">新密碼</label>
+        <input id="一般_新密碼" type="password" autocomplete="new-password">
+        <label for="一般_確認密碼">再輸入一次新密碼</label>
+        <input id="一般_確認密碼" type="password" autocomplete="new-password">
+        <button onclick="變更密碼('一般')" style="margin-top:12px">變更密碼</button>
+      </div>
+    </div>
+
+    <!-- ⑥ 帳號管理（僅精舍管理者） -->
+    <div class="頁" id="頁_帳號">
+      <div class="卡">
+        <h2>新增承辦人帳號</h2>
+        <p class="說明">建立後系統會產生一組<b>臨時密碼，只顯示一次</b>，請當面或電話告知本人；他第一次登入時必須自己改密碼。<br>
+          「Google 帳號」<b>選填</b>：承辦人若要直接開啟「整理副本」試算表編輯，才需要填他的 Gmail（系統會把副本共用給他）；不填也能使用本系統的所有功能。</p>
+        <div class="列">
+          <div><label for="新帳號_代號">帳號代號（英文小寫／數字，例如 wang01）</label><input id="新帳號_代號" autocapitalize="off" spellcheck="false"></div>
+          <div><label for="新帳號_姓名">姓名</label><input id="新帳號_姓名"></div>
+          <div><label for="新帳號_信箱">Google 帳號（選填）</label><input id="新帳號_信箱" placeholder="例如：wang@gmail.com"></div>
+        </div>
+        <button onclick="新增帳號()">建立帳號</button>
+      </div>
+      <div class="卡">
+        <h2>帳號清單</h2>
+        <p class="說明">忘記密碼時按「重設密碼」會產生新的臨時密碼；「停用」後對方立即無法登入。要指派活動，請到「④ 活動管理」。</p>
+        <div class="表格框"><table>
+          <thead><tr><th>代號／姓名</th><th>角色</th><th>Google 帳號</th><th>狀態</th><th>最後登入</th><th>操作</th></tr></thead>
+          <tbody id="表_帳號"></tbody>
+        </table></div>
+        <button class="次" onclick="載入帳號清單()">重新載入</button>
       </div>
     </div>
   </section>
@@ -240,40 +286,81 @@
     window.scrollTo(0, 0);
   }
 
-  /* ========== 登入 ========== */
-  let str登入憑證 = '';   // Google 回傳的 ID Token（約 1 小時有效），只存在記憶體
+  /* ========== 登入（代號＋密碼） ========== */
+  let str登入憑證 = '';   // 伺服器發的登入憑證（最長 6 小時）。放在 sessionStorage：重新整理頁面不必重登，關閉分頁即消失
 
-  /* Google 登入元件載入後初始化；載入較慢時每 0.2 秒重試 */
-  function 初始化登入() {
-    if (!window.google || !google.accounts || !google.accounts.id) { setTimeout(初始化登入, 200); return; }
-    google.accounts.id.initialize({
-      client_id: obj系統設定.str用戶端ID,
-      callback: function (obj回應) { str登入憑證 = obj回應.credential; 顯示結果(null); 重新整理(); },
-      auto_select: true
-    });
-    google.accounts.id.renderButton(document.getElementById('登入按鈕'), { theme: 'filled_brown', size: 'large', text: 'signin_with', locale: 'zh-TW' });
-    google.accounts.id.prompt();
-    顯示區塊('登入');
+  /* 讀寫 sessionStorage（隱私模式可能不可用，一律包 try/catch） */
+  function 讀取暫存憑證() { try { return sessionStorage.getItem('登入憑證') || ''; } catch (e) { return ''; } }
+  function 儲存暫存憑證(str) { try { if (str) { sessionStorage.setItem('登入憑證', str); } else { sessionStorage.removeItem('登入憑證'); } } catch (e) {} }
+  function 設定憑證(str) { str登入憑證 = str || ''; 儲存暫存憑證(str登入憑證); }
+
+  /* 登入：以代號＋密碼向伺服器換取登入憑證（此動作不需要憑證） */
+  function 登入() {
+    const str代號 = document.getElementById('輸入_代號').value.trim();
+    const str密碼 = document.getElementById('輸入_密碼').value;
+    if (!str代號 || !str密碼) { 顯示結果({ bool成功: false, str訊息: '請輸入代號與密碼。' }); return; }
+    設定忙碌(true);
+    fetch(obj系統設定.strGAS網址, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ 動作: '登入', 參數: [str代號, str密碼] })
+    })
+      .then(function (r) { if (!r.ok) { throw new Error('HTTP ' + r.status); } return r.json(); })
+      .then(function (obj) {
+        設定忙碌(false);
+        if (!obj.bool成功) { 顯示結果(obj); return; }
+        document.getElementById('輸入_密碼').value = '';
+        設定憑證(obj.str憑證);
+        顯示結果(null);
+        if (obj.bool須改密碼) { 顯示區塊('改密碼'); document.getElementById('副標').textContent = '請先設定新密碼'; } else { 重新整理(); }
+      })
+      .catch(function (err) {
+        設定忙碌(false);
+        顯示結果({ bool成功: false, str訊息: '無法連線到系統，請確認網路後再試；若持續發生請通知系統管理者。\n（' + err.message + '）' });
+      });
   }
 
+  /* 登出：通知伺服器作廢憑證，並清除畫面資料 */
   function 登出() {
-    str登入憑證 = '';
-    obj待同步 = {}; bool已自動檢查 = false;
-    if (window.google && google.accounts && google.accounts.id) { google.accounts.id.disableAutoSelect(); }
+    const str舊憑證 = str登入憑證;
+    if (str舊憑證) {
+      fetch(obj系統設定.strGAS網址, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ 動作: '登出', 參數: [], 憑證: str舊憑證 }) }).catch(function () {});
+    }
+    設定憑證('');
+    obj狀態 = null; obj待同步 = {}; bool已自動檢查 = false;
     document.getElementById('副標').textContent = '已登出';
+    顯示結果(null);
     顯示區塊('登入');
   }
 
-  /* 只顯示其中一個大區塊：登入／未連結／已連結 */
+  /* 變更密碼：str來源＝'強制'（第一次登入）或 '一般'（控制台頁） */
+  function 變更密碼(str來源) {
+    const str舊 = document.getElementById(str來源 + '_舊密碼').value;
+    const str新 = document.getElementById(str來源 + '_新密碼').value;
+    const str確認 = document.getElementById(str來源 + '_確認密碼').value;
+    if (!str舊 || !str新) { 顯示結果({ bool成功: false, str訊息: '請填寫目前的密碼與新密碼。' }); return; }
+    if (str新 !== str確認) { 顯示結果({ bool成功: false, str訊息: '兩次輸入的新密碼不一致。' }); return; }
+    呼叫('變更密碼', [str舊, str新], function (obj) {
+      if (obj.bool成功) {
+        設定憑證(obj.str憑證); // 舊憑證已作廢，換成新的
+        ['_舊密碼', '_新密碼', '_確認密碼'].forEach(function (k) { document.getElementById(str來源 + k).value = ''; });
+      }
+      顯示結果(obj);
+      if (obj.bool成功) { 重新整理(); }
+    });
+  }
+
+  /* 只顯示其中一個大區塊：登入／改密碼／已連結 */
   function 顯示區塊(str名稱) {
-    ['登入', '未連結', '已連結'].forEach(function (k) {
+    ['登入', '改密碼', '已連結'].forEach(function (k) {
       document.getElementById('區_' + k).style.display = (k === str名稱) ? 'block' : 'none';
     });
   }
 
   /* ========== 呼叫 GAS API ==========
      以 text/plain 送出 JSON，瀏覽器不會發出跨網域預檢（GAS 不支援）。
-     回傳 bool需重新登入 時，清掉憑證並回到登入畫面。 */
+     回傳 bool需重新登入 時，清掉憑證並回到登入畫面；回傳 bool須改密碼 時，轉到改密碼畫面。 */
   function 呼叫(str動作, arr參數, fn完成) {
     if (!str登入憑證) { 顯示區塊('登入'); return; }
     設定忙碌(true);
@@ -286,9 +373,14 @@
       .then(function (obj) {
         設定忙碌(false);
         if (obj.bool需重新登入) {
-          str登入憑證 = '';
+          設定憑證('');
           顯示結果({ bool成功: false, str訊息: obj.str訊息 });
           顯示區塊('登入');
+          return;
+        }
+        if (obj.bool須改密碼) {
+          顯示結果({ bool成功: false, str訊息: obj.str訊息 });
+          顯示區塊('改密碼');
           return;
         }
         fn完成(obj);
@@ -333,6 +425,7 @@
   /* ========== 標籤切換 ========== */
   function 切換標籤(str名稱) {
     str目前標籤 = str名稱;
+    if (str名稱 === '帳號' && bool管理者) { 載入帳號清單(); }
     document.querySelectorAll('.標籤').forEach(function (b) {
       b.classList.toggle('目前', b.getAttribute('data-頁') === str名稱);
     });
@@ -346,20 +439,23 @@
     呼叫('取得狀態', [], function (obj) {
       obj狀態 = obj;
       if (!obj.bool成功) { 顯示結果(obj); return; }
-      顯示區塊(obj.bool已連結 ? '已連結' : '未連結');
       if (!obj.bool已連結) {
-        document.getElementById('副標').innerHTML = '使用者：' + 安全文字(obj.str使用者) + '｜尚未連結控制台｜<a href="#" onclick="登出();return false;">登出</a>';
+        顯示結果({ bool成功: false, str訊息: '您的帳號尚未綁定到任何精舍，請聯絡系統管理者。' });
+        document.getElementById('副標').innerHTML = '使用者：' + 安全文字(obj.str使用者) + '｜<a href="#" onclick="登出();return false;">登出</a>';
+        顯示區塊('登入');
         return;
       }
+      顯示區塊('已連結');
       bool管理者 = obj.bool精舍管理者 !== false;
       document.getElementById('卡_新增活動').style.display = bool管理者 ? 'block' : 'none';
       document.getElementById('鈕_修復控制台').style.display = bool管理者 ? 'inline-block' : 'none';
+      document.getElementById('標籤_帳號').style.display = bool管理者 ? 'inline-block' : 'none';
+      if (!bool管理者 && str目前標籤 === '帳號') { str目前標籤 = '登錄'; }
       document.getElementById('標題').textContent = obj.str精舍名稱 + '｜精舍管理';
       document.getElementById('副標').innerHTML = '使用者：' + 安全文字(obj.str使用者) + '（' + 安全文字(obj.str角色) + '）' +
-        (bool管理者 ? '｜<a href="' + 安全文字(obj.str控制台網址) + '" target="_blank">開啟控制台試算表</a>' : '') +
         '｜<a href="#" onclick="登出();return false;">登出</a>';
       document.getElementById('控制台資訊').innerHTML = '精舍：' + 安全文字(obj.str精舍名稱) +
-        '<br>控制台：<a href="' + 安全文字(obj.str控制台網址) + '" target="_blank">' + 安全文字(obj.str控制台網址) + '</a>';
+        '<br>登入帳號：' + 安全文字(obj.str使用者) + '（' + 安全文字(obj.str角色) + '）';
 
       const arr = obj.arr活動 || [];
       畫登錄頁(arr);
@@ -367,6 +463,7 @@
       畫點名頁(arr);
       畫管理頁(arr);
       切換標籤(str目前標籤);
+      if (bool管理者 && str目前標籤 === '帳號') { 載入帳號清單(); }
       // 第一次載入時自動檢查一次新回應（只查看）
       if (!bool已自動檢查) {
         bool已自動檢查 = true;
@@ -398,7 +495,8 @@
           return '<tr><td>' + 活動名稱格(o) + '<br><small>' + 安全文字(o.str活動類型) + '</small></td><td>' + 狀態格(o) +
             '</td><td>' + 安全文字(o.str上次同步) + '</td><td>' + 待同步格(o) + '</td><td>' + o.int已同步筆數 +
             (o.int待處理提醒 > 0 ? '<br><span class="提醒數">提醒 ' + o.int待處理提醒 + '</span>' : '') +
-            '</td><td>' + 檔案連結(o, ['原始表', '副本']) + '</td><td>' + 按鈕('同步', '同步', o.str活動ID) + '</td></tr>';
+            '</td><td>' + 檔案連結(o, ['原始表', '副本']) + '</td><td>' + 按鈕('同步', '同步', o.str活動ID) +
+            按鈕('重複標示', '重複標示', o.str活動ID, '次') + '</td></tr>';
         }).join('');
 
     document.getElementById('數_同步').textContent = arr提醒.length || '';
@@ -454,7 +552,7 @@
               : '<button class="次" onclick="設定狀態(\'' + o.str活動ID + '\',\'結束\')">設為結束</button>';
             // 管理者可直接改承辦人；留空＝取消全部
             str承辦格 = '<input id="承辦人_' + 安全文字(o.str活動ID) + '" value="' + 安全文字(o.str承辦人) +
-              '" placeholder="帳號，逗號分隔" style="min-width:180px"><button class="次" onclick="設定承辦人(\'' + o.str活動ID + '\')">指派</button>';
+              '" placeholder="帳號代號，逗號分隔" style="min-width:180px"><button class="次" onclick="設定承辦人(\'' + o.str活動ID + '\')">指派</button>';
           } else {
             str操作 = '<small>轉為正式、結束活動請由精舍管理者操作</small>';
             str承辦格 = 安全文字(o.str承辦人 || '—');
@@ -488,7 +586,7 @@
   function 執行(str動作, str活動ID) {
     if (obj確認文字[str動作] && !confirm(obj確認文字[str動作])) { return; }
     const obj對照 = { '建立副本': '建立副本', '同步': '同步', '修復控制台': '修復控制台',
-                     '產生點名': '產生點名資料', '匯出點名': '匯出點名系統',
+                     '重複標示': '設定重複標示', '產生點名': '產生點名資料', '匯出點名': '匯出點名系統',
                      '轉為正式': '轉為正式', '退回演練': '退回演練' };
     呼叫(obj對照[str動作], str活動ID ? [str活動ID] : [], function (obj) {
       // 同步後待同步數字已過期：清掉，改顯示「尚未檢查」，避免誤導
@@ -525,16 +623,67 @@
   function 標記提醒(int列號, str狀態) {
     呼叫('標記提醒', [int列號, str狀態], function (obj) { 顯示結果(obj); 重新整理(); });
   }
-  function 連結控制台() {
-    呼叫('連結既有控制台', [document.getElementById('輸入_控制台網址').value], function (obj) { 顯示結果(obj); 重新整理(); });
+
+  /* ========== ⑥ 帳號管理（僅精舍管理者；後端也會檢查） ========== */
+  function 載入帳號清單() {
+    呼叫('列出帳號', [''], function (obj) {
+      if (!obj.bool成功) { 顯示結果(obj); return; }
+      const arr = obj.arr帳號 || [];
+      document.getElementById('表_帳號').innerHTML = arr.length === 0
+        ? 空列(6, '還沒有任何帳號。')
+        : arr.map(function (o) {
+            const str代 = 安全文字(o.str代號);
+            const bool自己 = obj狀態 && obj狀態.str使用者 === o.str代號;
+            const str狀 = o.bool停用 ? '<span class="狀 結束">已停用</span>'
+              : (o.bool鎖定中 ? '<span class="狀 演練">暫時鎖定</span>'
+              : (o.bool須改密碼 ? '<span class="狀 演練">待改密碼</span>' : '<span class="狀 正式">正常</span>'));
+            let str操作 = '';
+            if (o.str角色 === '承辦人') {
+              str操作 = '<button class="次" onclick="重設密碼(\'' + str代 + '\')">重設密碼</button>' +
+                '<button class="次" onclick="設定帳號停用(\'' + str代 + '\',' + (o.bool停用 ? 'false' : 'true') + ')">' + (o.bool停用 ? '啟用' : '停用') + '</button>' +
+                '<button class="次" onclick="設定帳號信箱(\'' + str代 + '\')">設定Google帳號</button>';
+            } else if (bool自己) {
+              str操作 = '<small>（您自己，請在「⑤」變更密碼）</small>';
+            } else {
+              str操作 = '<small>管理者帳號請聯絡系統管理者</small>';
+            }
+            return '<tr><td><b>' + str代 + '</b><br><small>' + 安全文字(o.str姓名) + '</small></td><td>' + 安全文字(o.str角色) +
+              '</td><td>' + 安全文字(o.str信箱 || '—') + '</td><td>' + str狀 + '</td><td><small>' + 安全文字(o.str最後登入 || '—') +
+              '</small></td><td>' + str操作 + '</td></tr>';
+          }).join('');
+    });
   }
-  function 取消連結() {
-    if (!confirm('確定要取消連結嗎？控制台試算表不會被刪除，之後可重新連結。')) { return; }
-    呼叫('取消連結', [], function (obj) { 顯示結果(obj); 重新整理(); });
+  function 新增帳號() {
+    const str代號 = document.getElementById('新帳號_代號').value;
+    const str姓名 = document.getElementById('新帳號_姓名').value;
+    const str信箱 = document.getElementById('新帳號_信箱').value;
+    呼叫('新增帳號', ['', str代號, str姓名, '承辦人', str信箱], function (obj) {
+      顯示結果(obj);
+      if (obj.bool成功) {
+        ['新帳號_代號', '新帳號_姓名', '新帳號_信箱'].forEach(function (k) { document.getElementById(k).value = ''; });
+        載入帳號清單();
+      }
+    });
+  }
+  function 重設密碼(str代號) {
+    if (!confirm('確定要重設「' + str代號 + '」的密碼？\n舊密碼會立即失效，系統會產生新的臨時密碼（只顯示一次）。')) { return; }
+    呼叫('重設密碼', [str代號], function (obj) { 顯示結果(obj); 載入帳號清單(); });
+  }
+  function 設定帳號停用(str代號, bool停用) {
+    if (bool停用 && !confirm('確定停用「' + str代號 + '」？對方會立即無法登入。')) { return; }
+    呼叫('設定帳號停用', [str代號, bool停用], function (obj) { 顯示結果(obj); 載入帳號清單(); });
+  }
+  function 設定帳號信箱(str代號) {
+    const str輸入 = prompt('請輸入「' + str代號 + '」的 Google 帳號（Gmail）。\n留空＝清除。', '');
+    if (str輸入 === null) { return; }
+    呼叫('設定帳號信箱', [str代號, str輸入], function (obj) { 顯示結果(obj); 載入帳號清單(); });
   }
 
-  /* 啟動：先登入，登入成功後自動讀取狀態 */
-  初始化登入();
+  /* 啟動：若分頁內還有尚未過期的登入憑證就直接進入；否則顯示登入畫面 */
+  (function 啟動() {
+    str登入憑證 = 讀取暫存憑證();
+    if (str登入憑證) { 重新整理(); } else { document.getElementById('副標').textContent = '請登入'; 顯示區塊('登入'); }
+  })();
 </script>
 </body>
 </html>
