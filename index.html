@@ -214,6 +214,15 @@
         <button class="次" onclick="重新整理()">重新整理畫面</button>
         <button class="次" id="鈕_修復控制台" onclick="執行('修復控制台')">檢查並補齊控制台</button>
       </div>
+      <!-- v2.8.0 大車點名試算表（僅精舍管理者） -->
+      <div class="卡" id="卡_點名試算表" style="display:none">
+        <h2>大車點名試算表</h2>
+        <p class="說明">本精舍「匯出到大車點名試算表」使用的試算表。請先把該試算表共用給系統帳號（編輯者），再貼上網址按「儲存」；系統會檢查打得開、而且有「活動配置」分頁。<br>已經匯出過的活動會沿用當時的試算表；清空後儲存＝取消設定。</p>
+        <p class="說明" id="點名試算表_目前">目前：尚未設定</p>
+        <label for="點名試算表_網址">點名試算表網址</label>
+        <input id="點名試算表_網址" placeholder="https://docs.google.com/spreadsheets/d/…/edit" style="width:100%">
+        <button onclick="設定點名試算表()" style="margin-top:12px">儲存</button>
+      </div>
       <div class="卡" style="max-width:480px">
         <h2>變更我的密碼</h2>
         <p class="說明">新密碼至少 8 個字元，需同時包含英文字母與數字。變更後其他已登入的畫面會自動登出。</p>
@@ -449,6 +458,11 @@
       bool管理者 = obj.bool精舍管理者 !== false;
       document.getElementById('卡_新增活動').style.display = bool管理者 ? 'block' : 'none';
       document.getElementById('鈕_修復控制台').style.display = bool管理者 ? 'inline-block' : 'none';
+      // v2.8.0 大車點名試算表設定（僅精舍管理者）
+      document.getElementById('卡_點名試算表').style.display = bool管理者 ? 'block' : 'none';
+      document.getElementById('點名試算表_目前').innerHTML = obj.str預設點名網址
+        ? '目前：<a href="' + 安全文字(obj.str預設點名網址) + '" target="_blank">開啟大車點名試算表</a>'
+        : '目前：<b>尚未設定</b>（匯出會失敗，請先設定）';
       document.getElementById('標籤_帳號').style.display = bool管理者 ? 'inline-block' : 'none';
       if (!bool管理者 && str目前標籤 === '帳號') { str目前標籤 = '登錄'; }
       document.getElementById('標題').textContent = obj.str精舍名稱 + '｜精舍管理';
@@ -596,6 +610,16 @@
       顯示結果(obj); 重新整理();
     });
   }
+  /* v2.8.0 ⑤ 儲存大車點名試算表網址（空白＝清除，會先確認） */
+  function 設定點名試算表() {
+    const str網址 = document.getElementById('點名試算表_網址').value.trim();
+    if (str網址 === '' && !confirm('網址是空白的，要清除大車點名試算表設定嗎？')) { return; }
+    呼叫('設定預設點名試算表', [str網址], function (obj) {
+      顯示結果(obj);
+      if (obj.bool成功) { document.getElementById('點名試算表_網址').value = ''; 重新整理(); }
+    });
+  }
+
   function 新增活動() {
     const str名稱 = document.getElementById('輸入_活動名稱').value;
     const str類型 = document.getElementById('輸入_活動類型').value;
