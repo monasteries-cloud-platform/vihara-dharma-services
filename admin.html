@@ -7,7 +7,8 @@
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <!--
   檔案：admin.html（放在 GitHub Pages，與 index.html 同一資料夾）
-  版本：v2.3.0（2026-10-02）建立精舍時同時建立「精舍管理者」代號／密碼帳號（臨時密碼只顯示一次）；新增「帳號管理」（可為任一精舍建立管理者／承辦人、重設密碼、停用）
+  版本：v2.4.0（2026-10-21）新增「系統管理者」卡片：查看名單、增加、移除他人、移轉自己的身分（需搭配 GAS 20_系統管理者.gs、10_API入口.gs v2.11.0）
+        v2.3.0（2026-10-02）建立精舍時同時建立「精舍管理者」代號／密碼帳號（臨時密碼只顯示一次）；新增「帳號管理」（可為任一精舍建立管理者／承辦人、重設密碼、停用）
         v2.1.0（2026-10-02）新增：總管理頁
   說明：只給「系統管理者」使用（以 Google 帳號登入）：建立新精舍的控制台與管理者帳號、管理各精舍帳號、查看所有精舍清單。
         精舍管理者與工作人員請使用 index.html。
@@ -142,6 +143,28 @@
       </div>
       <button class="次" onclick="重新整理()">重新整理</button>
     </div>
+
+    <!-- v2.4.0 系統管理者名單 -->
+    <div class="卡">
+      <h2>系統管理者</h2>
+      <p class="說明">系統管理者以 Google 帳號登入本頁，可建立精舍、管理各精舍帳號，並在所有精舍視同精舍管理者。<br>
+        <b>增加</b>：輸入對方的 Google 帳號後按「增加」。<b>移除</b>：只能移除別人，至少要保留 1 位。<br>
+        <b>移轉</b>：把<b>您自己</b>的身分交給另一個 Google 帳號，完成後您會立刻失去總管理權限並回到登入畫面。</p>
+      <div class="列">
+        <div><label for="輸入_系統管理者">Google 帳號</label><input id="輸入_系統管理者" placeholder="someone@gmail.com" autocapitalize="off" spellcheck="false"></div>
+      </div>
+      <button onclick="增加系統管理者()">增加</button>
+      <button class="次" style="color:var(--錯);border-color:var(--錯)" onclick="移轉系統管理者()">把我的身分移轉給這個帳號</button>
+      <div class="表格框"><table>
+        <thead><tr><th>Google 帳號</th><th>操作</th></tr></thead>
+        <tbody id="表_系統管理者"></tbody>
+      </table></div>
+      <p class="說明" style="margin-top:12px"><b>最近異動</b></p>
+      <div class="表格框"><table>
+        <thead><tr><th>時間</th><th>動作</th><th>對象</th><th>操作者</th></tr></thead>
+        <tbody id="表_系統管理者紀錄"></tbody>
+      </table></div>
+    </div>
   </section>
 </main>
 
@@ -246,6 +269,77 @@
               '<td>' + 安全文字(o.str建立時間) + '<br><small>' + 安全文字(o.str建立者) + '</small></td>' +
               '<td><a href="' + 安全文字(o.str控制台網址) + '" target="_blank">開啟</a></td></tr>';
           }).join('');
+      載入系統管理者(); // v2.4.0
+    });
+  }
+
+  /* ========== 系統管理者（v2.4.0） ========== */
+  /**
+   * 函式：載入系統管理者　版本：v1.0.0（2026-10-21）
+   * 說明：讀取名單與最近異動，畫出兩個表格。目前登入的自己不顯示「移除」按鈕（自己要離開請用移轉）。
+   */
+  function 載入系統管理者() {
+    呼叫('取得系統管理者', [], function (obj) {
+      if (!obj.bool成功) { 顯示結果(obj); return; }
+      const str自己 = String(obj.str目前帳號 || '');
+      const arr = obj.arr管理者 || [];
+      document.getElementById('表_系統管理者').innerHTML = arr.length === 0
+        ? '<tr><td colspan="2" class="空">名單是空的。</td></tr>'
+        : arr.map(function (s) {
+            const str安全 = 安全文字(s);
+            const str操作 = (s === str自己)
+              ? '<small>（您自己）</small>'
+              : (arr.length <= 1 ? '<small>至少保留 1 位</small>'
+                 : '<button class="次" onclick="移除系統管理者(\'' + str安全 + '\')">移除</button>');
+            return '<tr><td>' + str安全 + '</td><td>' + str操作 + '</td></tr>';
+          }).join('');
+      const arr紀錄 = obj.arr紀錄 || [];
+      document.getElementById('表_系統管理者紀錄').innerHTML = arr紀錄.length === 0
+        ? '<tr><td colspan="4" class="空">尚無異動紀錄。</td></tr>'
+        : arr紀錄.map(function (o) {
+            return '<tr><td><small>' + 安全文字(o.str時間) + '</small></td><td>' + 安全文字(o.str動作) + '</td><td>' +
+              安全文字(o.str對象) + '</td><td><small>' + 安全文字(o.str操作者) + '</small></td></tr>';
+          }).join('');
+    });
+  }
+  /** 函式：增加系統管理者　版本：v1.0.0（2026-10-21） */
+  function 增加系統管理者() {
+    const str帳號 = document.getElementById('輸入_系統管理者').value.trim();
+    if (!str帳號) { 顯示結果({ bool成功: false, str訊息: '請先輸入要增加的 Google 帳號。' }); return; }
+    if (!confirm('確定把「' + str帳號 + '」加入系統管理者？\n對方將可建立精舍、管理所有精舍的帳號。')) { return; }
+    呼叫('新增系統管理者', [str帳號], function (obj) {
+      顯示結果(obj);
+      if (obj.bool成功) { document.getElementById('輸入_系統管理者').value = ''; 載入系統管理者(); }
+    });
+  }
+  /** 函式：移除系統管理者　版本：v1.0.0（2026-10-21） */
+  function 移除系統管理者(str帳號) {
+    if (!confirm('確定把「' + str帳號 + '」移出系統管理者？對方將無法再使用總管理。')) { return; }
+    呼叫('移除系統管理者', [str帳號], function (obj) { 顯示結果(obj); 載入系統管理者(); });
+  }
+  /**
+   * 函式：移轉系統管理者　版本：v1.0.0（2026-10-21）
+   * 說明：需再輸入一次新帳號確認（防止打錯字把身分交給不存在的帳號）。成功後清掉本機登入、回到登入畫面。
+   */
+  function 移轉系統管理者() {
+    const str帳號 = document.getElementById('輸入_系統管理者').value.trim();
+    if (!str帳號) { 顯示結果({ bool成功: false, str訊息: '請先在「Google 帳號」欄輸入接手者的帳號。' }); return; }
+    const str確認 = prompt('移轉後，您將「立刻失去」系統管理者身分，只有「' + str帳號 + '」（及名單中其他人）能使用總管理。\n\n' +
+      '請再輸入一次接手者的 Google 帳號以確認：');
+    if (str確認 === null) { return; }
+    if (str確認.trim().toLowerCase() !== str帳號.toLowerCase()) {
+      顯示結果({ bool成功: false, str訊息: '兩次輸入的帳號不同，已取消，沒有做任何變更。' });
+      return;
+    }
+    呼叫('移轉系統管理者', [str帳號], function (obj) {
+      if (!obj.bool成功) { 顯示結果(obj); return; }
+      // 身分已交出：清掉本機登入，回到登入畫面，但保留結果訊息
+      str登入憑證 = '';
+      if (window.google && google.accounts && google.accounts.id) { google.accounts.id.disableAutoSelect(); }
+      document.getElementById('輸入_系統管理者').value = '';
+      document.getElementById('副標').textContent = '已移轉並登出';
+      顯示區塊('登入');
+      顯示結果(obj);
     });
   }
 
